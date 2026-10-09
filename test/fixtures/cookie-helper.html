@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cookie 取用助手（独立工具）</title>
+<style>
+  :root {
+    --fg:#15181c; --bg:#f6f7f9; --card:rgba(255,255,255,.72);
+    --bd:rgba(20,22,26,.1); --sh:rgba(20,22,26,.1); --hl:rgba(255,255,255,.8);
+    --muted:rgba(20,22,26,.5); --ok:#00a396; --warn:#e6a23c; --danger:#f56c6c;
+    --mono:Consolas,Monaco,"SF Mono",monospace;
+  }
+  @media (prefers-color-scheme:dark) {
+    :root {
+      --fg:rgba(255,255,255,.92); --bg:#0f1114; --card:rgba(30,32,38,.7);
+      --bd:rgba(255,255,255,.12); --sh:rgba(0,0,0,.5); --hl:rgba(255,255,255,.1);
+      --muted:rgba(255,255,255,.5);
+    }
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; padding:28px 20px 60px; background:var(--bg); color:var(--fg);
+    font:14px/1.65 "PingFang SC","Microsoft YaHei",-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:840px; margin:0 auto; }
+  h1 { font-size:19px; margin:0 0 4px; font-weight:650; }
+  .sub { color:var(--muted); font-size:12.5px; margin-bottom:22px; }
+  .card {
+    background:var(--card); -webkit-backdrop-filter:blur(20px) saturate(180%);
+    backdrop-filter:blur(20px) saturate(180%);
+    border:1px solid var(--bd); border-radius:16px;
+    box-shadow:0 6px 26px var(--sh), inset 0 1px 0 var(--hl);
+    padding:18px 20px; margin-bottom:14px;
+  }
+  .lbl { font-size:10.5px; font-weight:600; color:var(--muted); margin-bottom:8px; }
+  textarea, input[type=text] {
+    width:100%; background:rgba(0,0,0,.03); color:var(--fg);
+    border:1px solid var(--bd); border-radius:10px; padding:9px 11px;
+    font-family:var(--mono); font-size:12px; line-height:1.6; outline:none; resize:vertical;
+  }
+  @media (prefers-color-scheme:dark){ textarea{background:rgba(255,255,255,.04);} }
+  textarea:focus { border-color:var(--ok); box-shadow:0 0 0 3px rgba(0,163,150,.16); }
+  #src { min-height:130px; }
+  #out { min-height:96px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  button {
+    border:1px solid var(--bd); background:rgba(0,0,0,.03); color:var(--fg);
+    border-radius:9px; padding:6px 13px; font-size:12.5px; cursor:pointer;
+    transition:transform .1s, box-shadow .16s, background .16s;
+  }
+  button:hover { background:rgba(0,0,0,.07); }
+  button:active { transform:scale(.97); }
+  button.pri { background:var(--ok); border-color:transparent; color:#fff; font-weight:600; }
+  button.pri:hover { filter:brightness(1.08); background:var(--ok); }
+  .hint { font-size:11.5px; color:var(--muted); margin-top:8px; line-height:1.6; }
+  table { width:100%; border-collapse:collapse; margin-top:10px; font-size:12.5px; }
+  th { text-align:left; font-weight:600; color:var(--muted); font-size:10.5px; padding:4px 6px; }
+  td { padding:4px 6px; border-top:1px solid var(--bd); }
+  td.n { font-family:var(--mono); font-size:11.5px; }
+  td.len { color:var(--muted); font-variant-numeric:tabular-nums; width:56px; text-align:right; }
+  .tier {
+    display:inline-block; padding:1px 7px; border-radius:99px; font-size:10px; font-weight:600;
+    white-space:nowrap;
+  }
+  .t-req { background:rgba(245,108,108,.16); color:var(--danger); }
+  .t-ogv { background:rgba(230,162,60,.18); color:var(--warn); }
+  .t-rec { background:rgba(0,163,150,.16); color:var(--ok); }
+  .t-opt { background:rgba(128,128,128,.14); color:var(--muted); }
+  .t-no  { background:rgba(245,108,108,.12); color:var(--danger); }
+  tr.off td.n { text-decoration:line-through; opacity:.42; }
+  tr.off td { opacity:.55; }
+  input[type=checkbox] { cursor:pointer; }
+  .stat { font-size:12px; color:var(--muted); }
+  .stat b { color:var(--fg); font-variant-numeric:tabular-nums; }
+  .steps { counter-reset:s; padding-left:0; list-style:none; margin:0; }
+  .steps li { position:relative; padding-left:26px; margin:7px 0; font-size:12.5px; }
+  .steps li::before {
+    counter-increment:s; content:counter(s);
+    position:absolute; left:0; top:1px; width:18px; height:18px; border-radius:50%;
+    background:rgba(0,163,150,.16); color:var(--ok);
+    font-size:10.5px; font-weight:700; text-align:center; line-height:18px;
+  }
+  code { font-family:var(--mono); font-size:11.5px; background:rgba(0,0,0,.05); padding:1px 5px; border-radius:4px; }
+  @media (prefers-color-scheme:dark){ code{background:rgba(255,255,255,.07);} }
+  .flash { animation:fl .5s; }
+  @keyframes fl { 0%,100%{opacity:1} 50%{opacity:.4} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Cookie 取用助手</h1>
+  <div class="sub">把 DevTools 复制出来的内容原样粘进来，自动挑出有效字段，输出可直接粘贴的字符串。全部在本机处理，不发送任何数据。</div>
+
+  <div class="card">
+    <ol class="steps">
+      <li>登录你的副账号（已开通大会员）</li>
+      <li>F12 → Application（应用）→ Storage → Cookies → <code>https://www.bilibili.com</code></li>
+      <li>点开这个域名，在列表里 <b>Ctrl+A 全选</b>，再 <b>Ctrl+C</b></li>
+      <li>粘贴到下面方框</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <div class="lbl">① 粘贴原始内容</div>
+    <textarea id="src" placeholder="把 DevTools 复制的内容直接粘 here，不用整理格式。支持：&#10;· 每行 name&#9;value 的表格文本（DevTools 默认）&#10;· name=value; name=value 的 Cookie 字符串&#10;· Chrome 导出的 JSON"></textarea>
+    <div class="row">
+      <button class="pri" id="parse">解析</button>
+      <button data-preset="min">只要必需</button>
+      <button data-preset="rec">推荐组合</button>
+      <button data-preset="all">全部字段</button>
+      <span class="stat" id="stat">等待粘贴</span>
+    </div>
+    <div class="hint" id="fmt"></div>
+  </div>
+
+  <div class="card" id="tableCard" style="display:none">
+    <div class="lbl">② 字段清单（可勾选）</div>
+    <div class="stat" id="summary"></div>
+    <table>
+      <thead><tr><th style="width:26px"></th><th>字段</th><th style="width:60px">长度</th><th style="width:96px">分级</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div class="card" id="outCard" style="display:none">
+    <div class="lbl">③ 复制这段，粘到脚本面板的输入框</div>
+    <textarea id="out" spellcheck="false"></textarea>
+    <div class="row">
+      <button class="pri" id="copy">复制到剪贴板</button>
+      <button id="selectAll">全选</button>
+      <span class="stat" id="copied"></span>
+    </div>
+    <div class="hint">
+      推荐存成纯文本文件 <code>credentials/B.txt</code>（已 gitignore），下次直接被脚本读取；
+      放进 <code>.verify.local.json</code> 也行，但含 <code>{"..."}</code> 的字段会破坏 JSON 格式。
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ---------- 字段分级（与 src/core/cookie-fields.js 保持一致） ---------- */
+const TIERS = {
+  SESSDATA:              { t:'t-req', label:'必需' },
+  bili_jct:              { t:'t-ogv', label:'番剧必需' },
+  'bili-jct':            { t:'t-ogv', label:'番剧必需' },
+  DedeUserID:            { t:'t-rec', label:'建议' },
+  buvid3:                { t:'t-rec', label:'防-412' },
+  buvid4:                { t:'t-rec', label:'防-412' },
+  bili_ticket:           { t:'t-rec', label:'反爬' },
+  bili_ticket_expires:   { t:'t-rec', label:'反爬' },
+  buvid_fp:              { t:'t-rec', label:'设备' },
+  b_nut:                 { t:'t-rec', label:'设备' },
+  b_lsid:                { t:'t-rec', label:'设备' },
+  _uuid:                 { t:'t-rec', label:'设备' },
+  sid:                   { t:'t-no',  label:'别混用' },
+};
+const REC = ['SESSDATA','DedeUserID','bili_jct','buvid3','buvid4','bili_ticket','bili_ticket_expires','buvid_fp','b_nut','b_lsid','_uuid'];
+
+function tierOf(k) { return TIERS[k] || { t:'t-opt', label:'可选' }; }
+
+/* ---------- 解析：容错识别三种来源格式 ---------- */
+/**
+ * 关键：DevTools 的 Cookies 表格 Ctrl+C 出来的是 **12 列 TSV**：
+ *   Name ⇥ Value ⇥ Domain ⇥ Path ⇥ Expires ⇥ Size ⇥ HTTPOnly ⇥ Secure ⇥ SameSite ⇥ Priority ⇥ PartitionKey
+ * 不是「name⇥value」两列。所以只能取前两列，后面的必须丢掉 ——
+ * 否则整张表会被拼进值里，粘到脚本上必然失效。
+ */
+function parse(raw) {
+  const out = {};
+  let mode = '';
+  const text = String(raw || '').trim();
+  if (!text) return { fields: out, mode: '' };
+
+  // 1) Chrome 导出的 JSON（Cookies 面板右键 → Export…）
+  if (text[0] === '[' || text[0] === '{') {
+    try {
+      const j = JSON.parse(text);
+      const arr = Array.isArray(j) ? j : j.cookies || [];
+      for (const c of arr) if (c && c.name) out[c.name] = String(c.value ?? '');
+      if (Object.keys(out).length) return { fields: out, mode: 'Chrome 导出的 JSON' };
+    } catch (e) { /* 落到下面 */ }
+  }
+
+  const lines = text.split(/\r?\n/).map((s) => s.trimEnd()).filter((s) => s.trim());
+  let byLine = 0;
+  let wide = 0;
+  for (const line of lines) {
+    if (!line.includes('\t')) continue;
+    const cols = line.split('\t');
+    const name = (cols[0] || '').trim();
+    if (!name) continue;
+    let value = (cols[1] !== undefined ? cols[1] : '').trim();
+    // Chrome 会给含特殊字符的值加引号
+    if (value.length > 1 && value[0] === '"' && value[value.length - 1] === '"') {
+      value = value.slice(1, -1).replace(/""/g, '"');
+    }
+    if (cols.length > 2) wide++;
+    out[name] = value;
+    byLine++;
+  }
+  if (byLine > 0) {
+    return {
+      fields: out,
+      mode: wide > 0
+        ? `DevTools 表格文本（${Object.keys(out).length} 行 × 多列，已只取 Name/Value）`
+        : '表格文本（两列）'
+    };
+  }
+
+  // 2) 已成形的 Cookie 字符串：a=1; b=2
+  //    注意 bmg_af_sc={"none":{"on":1}} 里含 ; 与引号，
+  //    所以只能按「行首形如 name=」来切，不能简单按 ; 切。
+  const m = text.match(/(?:^|;\s*)([A-Za-z0-9_.\-]+)=/);
+  if (m) {
+    for (const part of text.split(';')) {
+      const i = part.indexOf('=');
+      if (i > 0) out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
+    }
+    if (Object.keys(out).length) return { fields: out, mode: 'Cookie 字符串' };
+  }
+  void m;
+  return { fields: out, mode: '无法识别' };
+}
+
+/* ---------- 渲染 ---------- */
+let FIELDS = {};
+const chosen = new Set();
+
+function applyPreset(kind) {
+  const keys = Object.keys(FIELDS);
+  chosen.clear();
+  for (const k of keys) {
+    // 注意：必须 add 字段名 k 本身。之前误写成 add(布尔判断)，
+    // 导致 chosen 里存进 true/false，输出恒为空。
+    const keep =
+      kind === 'min'   ? (k === 'SESSDATA' || k === 'bili_jct' || k === 'bili-jct')
+      : kind === 'rec' ? REC.includes(k)
+      : kind === 'all' ? k !== 'sid'        // sid 与 SESSDATA 成对，别带
+      : false;
+    if (keep) chosen.add(k);
+  }
+  render();
+}
+
+function render() {
+  const keys = Object.keys(FIELDS);
+  const tb = document.getElementById('rows');
+  tb.textContent = '';
+
+  // 按分级排序：必需 → 番剧 → 建议 → 可选
+  const order = { 't-req':0,'t-ogv':1,'t-no':1,'t-rec':2,'t-opt':3 };
+  keys.sort((a,b) => (order[tierOf(a).t]-order[tierOf(b).t]) || a.localeCompare(b));
+
+  for (const k of keys) {
+    const t = tierOf(k);
+    const tr = document.createElement('tr');
+    if (!chosen.has(k)) tr.className = 'off';
+
+    const td0 = document.createElement('td');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = chosen.has(k);
+    cb.addEventListener('change', () => { cb.checked ? chosen.add(k) : chosen.delete(k); tr.className = cb.checked ? '' : 'off'; updateOut(); });
+    td0.appendChild(cb);
+
+    const td1 = document.createElement('td'); td1.className='n'; td1.textContent = k;
+    const td2 = document.createElement('td'); td2.className='len'; td2.textContent = String(FIELDS[k]).length;
+    const td3 = document.createElement('td');
+    const sp = document.createElement('span'); sp.className='tier '+t.t; sp.textContent = t.label;
+    td3.appendChild(sp);
+
+    tr.append(td0,td1,td2,td3);
+    tr.addEventListener('click', (e) => { if (e.target !== cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } });
+    tb.appendChild(tr);
+  }
+
+  const need = ['SESSDATA'].filter(k => !chosen.has(k));
+  document.getElementById('summary').innerHTML =
+    `共 <b>${keys.length}</b> 个字段，已选 <b>${chosen.size}</b> 个` +
+    (need.length ? ` · <span style="color:var(--danger)">缺少 ${need.join('、')}</span>` : '');
+
+  updateOut();
+}
+
+function updateOut() {
+  const keys = Object.keys(FIELDS).filter(k => chosen.has(k));
+  const s = keys.map(k => `${k}=${FIELDS[k]}`).join('; ');
+  document.getElementById('out').value = s;
+  document.getElementById('stat').textContent = `已识别 ${Object.keys(FIELDS).length} 个字段`;
+}
+
+function doParse() {
+  const { fields, mode } = parse(document.getElementById('src').value);
+  FIELDS = fields;
+  const n = Object.keys(fields).length;
+  document.getElementById('fmt').textContent = n ? `识别为：${mode}` : '';
+  if (!n) { document.getElementById('tableCard').style.display='none'; document.getElementById('outCard').style.display='none'; return; }
+  document.getElementById('tableCard').style.display='';
+  document.getElementById('outCard').style.display='';
+  applyPreset('rec');
+  if (!('SESSDATA' in fields)) {
+    document.getElementById('summary').innerHTML += ' · <span style="color:var(--danger)">没找到 SESSDATA，多半是只复制了部分行</span>';
+  }
+}
+
+document.getElementById('parse').addEventListener('click', doParse);
+document.getElementById('src').addEventListener('paste', () => setTimeout(doParse, 0));
+for (const b of document.querySelectorAll('[data-preset]')) {
+  b.addEventListener('click', () => applyPreset(b.dataset.preset));
+}
+document.getElementById('copy').addEventListener('click', async () => {
+  const ta = document.getElementById('out');
+  ta.select();
+  try { await navigator.clipboard.writeText(ta.value); flash('copied', '已复制 ✓'); }
+  catch (e) { document.execCommand && document.execCommand('copy'); flash('copied','已复制 ✓（兼容模式）'); }
+});
+document.getElementById('selectAll').addEventListener('click', () => {
+  const ta = document.getElementById('out'); ta.focus(); ta.select();
+});
+function flash(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.className = 'stat flash';
+  setTimeout(() => { el.textContent=''; }, 1800);
+}
+</script>
+</body>
+</html>

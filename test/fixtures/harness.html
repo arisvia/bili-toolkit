@@ -1,0 +1,142 @@
+﻿<!doctype html>
+<html><head><meta charset="utf-8"><title>harness</title>
+<style>body{margin:0;font-family:system-ui;background:linear-gradient(135deg,#f6f7f9,#e9edf2);height:200vh;padding:40px}
+h1{font-weight:600;color:#222}</style></head>
+<body>
+<h1>B 站页面模拟（测试面板用）</h1>
+<p>页面内容</p>
+<script>
+window.__errors = [];
+window.addEventListener('error', (e) => window.__errors.push(String(e.message)));
+window.__GM = { 'b.cookie': 'SESSDATA=b-secret; DedeUserID=999; bili_jct=b-csrf; buvid3=b-dev3' };
+window.GM_getValue = (k, d) => (k in window.__GM ? window.__GM[k] : d);
+window.GM_setValue = (k, v) => { window.__GM[k] = v; };
+window.GM_deleteValue = (k) => { delete window.__GM[k]; };
+window.GM_registerMenuCommand = () => {};
+window.GM_notification = () => {};
+window.__reqs = [];
+window.GM_xmlhttpRequest = (o) => {
+  window.__reqs.push({ url: o.url, cookie: o.cookie });
+  let res = null;
+  if (o.url.includes('wbi/img')) res = { code: 0, data: { img_url: 'https://x/7cd084941338484aae1ad9425b84077c.png', sub_url: 'https://x/4932caff0ff746eab6f01bf08b70ac45.png' } };
+  else if (o.url.includes('playurl')) res = { code: 0, data: { quality: 127, accept_quality: [127,120,116,80], support_formats: [{quality:127},{quality:120},{quality:116},{quality:80}], dash: { video: [{id:127,codecid:7,bandwidth:18000000,width:3840,height:2160,frameRate:"60.000"},{id:120,codecid:12,bandwidth:12000000,width:1920,height:1080,frameRate:"60.000"}], audio: [{id:30280,bandwidth:192000}] } } };
+  setTimeout(() => res ? o.onload({status:200,statusText:'OK',responseText:JSON.stringify(res),responseHeaders:'content-type: application/json'}) : o.onerror({status:404}), 5);
+};
+window.__nativeFetch = window.fetch;
+window.__nativeSend = XMLHttpRequest.prototype.send;
+window.__INITIAL_STATE__ = { videoData: { bvid: 'BV1test', cid: 42 }, user: { vipStatus: 0 } };
+</script>
+<script src="../../dist/bilibili-vip-proxy.user.js"></script>
+<script>
+window.__results = [];
+const SAMPLE_TSV = [
+  'SESSDATA\tsample-sessdata-value-'.padEnd(222,'z') + '\t.bilibili.com\t/\t2027-10-09T05:56:45.000Z\t225\t\u2713\t\u2713\tNone\t\t\tMedium',
+  'bili_jct\tsample-jct-value\t.bilibili.com\t/\t2027-10-09T05:56:45.000Z\t35\t\t\u2713\tNone\t\t\tMedium',
+  'DedeUserID\t123456\t.bilibili.com\t/\t2027-04-06T02:48:35.000Z\t16\t\t\u2713\tNone\t\t\tMedium',
+  'buvid3\tsample-buvid3-value-abcdef\t.bilibili.com\t/\t2026-04-06T02:48:35.000Z\t49\t\t\t\t\t\tMedium',
+  'buvid4\tsample-buvid4-value\t.bilibili.com\t/\t2026-04-06T02:48:35.000Z\t118\t\t\t\t\t\tMedium',
+  'bili_ticket\tsample-ticket\t.bilibili.com\t/\t2026-10-09T05:56:45.000Z\t159\t\t\t\t\t\tMedium',
+  'sid\tsample-sid\t.bilibili.com\t/\t2026-10-09T05:56:45.000Z\t11\t\t\u2713\tNone\t\t\tMedium',
+  'bmg_af_sc\t{"none":{"on":1}}\t.bilibili.com\t/\t2026-10-09T05:56:45.000Z\t79\t\t\t\t\t\tMedium'
+].join('\n');
+
+const chk = (n, c, x) => window.__results.push({ n, ok: !!c, x: c ? undefined : x });
+(async () => {
+  await new Promise(r => setTimeout(r, 400));
+  chk('无错误', window.__errors.length === 0, window.__errors);
+  const p = document.getElementById('__BILI_VIP__-panel');
+  chk('面板已挂载', !!p);
+  chk('旧徽标已移除', !document.getElementById('__BILI_VIP__-badge'));
+  chk('面板标题取自 meta', p.querySelector('.title').textContent.includes('会员权益借用'), p.querySelector('.title').textContent);
+  chk('自定义滚动条样式已注入', !!document.getElementById('__BILI_VIP__-panel-css'));
+  const css = getComputedStyle(p.querySelector('.panel'));
+  chk('滚动条为细样式', css.scrollbarWidth === 'thin', css.scrollbarWidth);
+  const ta = p.querySelector('textarea');
+  chk('输入框有聚焦光环', getComputedStyle(ta).transition.includes('box-shadow'));
+  p.querySelector('.dot').click();
+  await new Promise(r => setTimeout(r, 80));
+  chk('面板可展开', p.querySelector('.panel').classList.contains('show'));
+  chk('展开后高度合理', p.querySelector('.panel').offsetHeight > 200 && p.querySelector('.panel').offsetHeight < 600);
+  // 触发一次播放，验证实时状态
+  await window.fetch('https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1test&cid=42&qn=32');
+  await new Promise(r => setTimeout(r, 1200));
+  const hero = p.querySelector('.hero .q').textContent;
+  chk('实时显示 8K 画质', hero === '8K', hero);
+  const liveTxt = p.querySelector('#__BILI_VIP__-panel-live').textContent;
+  chk('显示分辨率 3840×2160', liveTxt.includes('3840×2160'), liveTxt.slice(0,120));
+  chk('显示码率', liveTxt.includes('18000 kbps'), liveTxt.slice(0,160));
+  chk('显示可选档位', liveTxt.includes('8K') && liveTxt.includes('4K'), liveTxt.slice(0,200));
+  // 区域切换
+  const segs = Array.from(p.querySelectorAll('.seg'));
+  const regionSeg = segs.find(s => Array.from(s.children).some(c => c.textContent === '港澳台'));
+  regionSeg.querySelectorAll('button')[1].click();
+  chk('区域已存为 hkmo', window.__GM['b.region'] === 'hkmo', window.__GM['b.region']);
+  // 画质切换
+  const qSeg = segs.find(s => Array.from(s.children).some(c => c.textContent === '4K'));
+  qSeg.querySelectorAll('button')[1].click();
+  chk('画质已存为 uhd', window.__GM['b.quality'] === 'uhd', window.__GM['b.quality']);
+  // 开关
+  const swSeg = segs.find(s => Array.from(s.children).some(c => c.textContent === '停用'));
+  swSeg.querySelectorAll('button')[1].click();
+  chk('已停用', window.__GM['b.enabled'] === false);
+
+  
+  // ---- Cookie 解析（面板内）----
+  // 关键：解析是防抖的（260ms），且预设点击后 ta.value 才更新，
+  // 所以这里统一在最后一次性断言，之前那版因为时序不对全挂了。
+  // 凭证可选：有就读真实的，没有就用内置样例（保证他人克隆后也能跑）
+  let tsv = SAMPLE_TSV;
+  let hasCred = false;
+  try {
+    const r = await fetch('../../credentials/A.txt');
+    if (r.ok) { tsv = await r.text(); hasCred = true; }
+  } catch (e) { /* 用样例 */ }
+  if (!hasCred) chk('（无凭证文件，跳过真实数据断言，使用内置样例）', true);
+  const ckTa = p.querySelector('textarea');
+  ckTa.value = tsv;
+  ckTa.dispatchEvent(new Event('input', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 900));
+
+  const ckBox = [...p.querySelectorAll('div')].find(d => d.style.maxHeight === '168px');
+  chk('粘贴 DevTools 原始 TSV 后出现字段清单', !!ckBox && ckBox.style.display !== 'none');
+  const ckRows = ckBox ? ckBox.querySelectorAll('label') : [];
+  chk('列出全部字段', ckRows.length === (hasCred ? 23 : 8), ckRows.length);
+  const ckLabels = [...ckRows].map(r => r.textContent);
+  chk('SESSDATA 标记为必需', ckLabels.some(l => l.includes('SESSDATA') && l.includes('必需')));
+  chk('sid 标记为别混用', ckLabels.some(l => l.startsWith('sid') && l.includes('别混用')));
+  chk('bili_jct 标记为番剧必需', ckLabels.some(l => l.includes('bili_jct') && l.includes('番剧必需')));
+
+  // 默认预设是「推荐组合」，此时 ta.value 应已被替换成干净串
+  const ckOut = ckTa.value;
+  chk('输入框已替换为整理后的 Cookie 串', ckOut.includes('SESSDATA=') && !ckOut.includes('\t'), ckOut.slice(0, 40));
+  chk('整理结果不含 Domain 残留', !ckOut.includes('bilibili.com'));
+  chk('推荐组合排除了 bmg_af_sc', !ckOut.includes('bmg_af_sc'));
+  chk('推荐组合排除了 sid', !ckOut.split('; ').some(x => x.startsWith('sid=')));
+  const ckSess = ckOut.split('; ').find(x => x.startsWith('SESSDATA='));
+  // 注意 'SESSDATA=' 是 9 个字符，不是 11
+  chk('SESSDATA 值完整(222 字符)', !!ckSess && ckSess.length === 'SESSDATA='.length + 222, ckSess && ckSess.length);
+  chk('推荐组合共 11 个字段', ckOut.split('; ').length === 11, ckOut.split('; ').length);
+
+  // 切到「只要必需」
+  // 宽度回归：文本域必须撑满 section 内区，不能退化成内容宽度
+  {
+    const secEl = ckTa.closest('.sec');
+    const inner = secEl.clientWidth - parseFloat(getComputedStyle(secEl).paddingLeft) - parseFloat(getComputedStyle(secEl).paddingRight);
+    const w = ckTa.getBoundingClientRect().width;
+    chk('Cookie 文本域撑满可用宽度', Math.abs(w - inner) <= 1, { textarea: Math.round(w), available: Math.round(inner) });
+    chk('文本域宽度大于 260px', w > 260, Math.round(w));
+    chk('文本域无横向溢出', ckTa.scrollWidth <= ckTa.clientWidth + 1, { scroll: ckTa.scrollWidth, client: ckTa.clientWidth });
+    chk('box-sizing 为 border-box', getComputedStyle(ckTa).boxSizing === 'border-box');
+  }
+
+  const ckMin = [...p.querySelectorAll('.seg button')].find(b => b.textContent === '只要必需');
+  ckMin.click();
+  await new Promise(r => setTimeout(r, 250));
+  chk('切到最小组合后只剩 2 个字段', ckTa.value.split('; ').length === 2, ckTa.value.split('; ').map(x => x.split('=')[0]));
+  chk('最小组合仍含 SESSDATA 与 bili_jct', ckTa.value.includes('SESSDATA=') && ckTa.value.includes('bili_jct='));
+  chk('切预设后仍是合法 Cookie 串（无 tab / 无域名）', !ckTa.value.includes('\t') && !ckTa.value.includes('bilibili.com'));
+document.getElementById('out').textContent = window.__results.map(r=>(r.ok?'✔ ':'✖ ')+r.n+(r.x?' → '+JSON.stringify(r.x):'')).join('\n');
+})();
+</script>
+<pre id="out" style="position:fixed;right:8px;top:8px;background:#fff;padding:10px;font:12px monospace;z-index:99999"></pre>
+</body></html>

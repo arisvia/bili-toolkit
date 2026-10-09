@@ -1,0 +1,42 @@
+{
+  "name": "bili-toolkit",
+  "version": "2.1.0",
+  "private": true,
+  "type": "module",
+  "description": "B 站用户脚本工具箱：多账号权益借用、一键切换、播放体验增强",
+  "keywords": [
+    "bilibili",
+    "userscript",
+    "tampermonkey",
+    "vip"
+  ],
+  "license": "MIT",
+  "author": "arisvia",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arisvia/bili-toolkit.git"
+  },
+  "homepage": "https://github.com/arisvia/bili-toolkit#readme",
+  "bugs": {
+    "url": "https://github.com/arisvia/bili-toolkit/issues"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --dev --watch",
+    "check": "node build.mjs --check",
+    "test": "node test/smoke.test.mjs && node test/cookie-parse.test.mjs && node test/proxy.test.mjs && node test/hook.test.mjs",
+    "verify": "npm run test && npm run verify:online && npm run build",
+    "verify:online": "node tools/online-check.mjs",
+    "verify:local": "node tools/verify-local.mjs",
+    "verify:cookie": "node tools/verify-cookie.mjs",
+    "gen:md5": "node tools/gen-md5.mjs",
+    "harness": "node build.mjs && node tools/harness-server.mjs",
+    "release": "node tools/release.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,301 @@
+/**
+ * 主世界钩子集成测试：在 vm 里跑真实的 src/injected/hook.js。
+ *   node test/hook.test.mjs
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const HOOK = fs.readFileSync(path.join(ROOT, 'src/injected/hook.js'), 'utf8');
+
+let failed = 0;
+function check(name, cond, extra) {
+  if (cond) console.log(`  \x1b[32m✔\x1b[0m ${name}`);
+  else {
+    failed++;
+    console.error(`  \x1b[31m✖\x1b[0m ${name}${extra !== undefined ? '  → ' + JSON.stringify(extra) : ''}`);
+  }
+}
+
+const TOKEN = 'test-token-1234';
+
+function makeEnv(cfgOverrides = {}, responder) {
+  const listeners = { message: [], popstate: [] };
+  const state = { sent: [], fetched: [] };
+
+  const win = {};
+  win.window = win;
+  win.globalThis = win;
+  win.location = { href: 'https://www.bilibili.com/video/BV1xx', pathname: '/video/BV1xx', search: '' };
+  win.history = { pushState: () => {}, replaceState: () => {} };
+  win.console = { info() {}, warn() {}, error() {}, debug() {} };
+  win.setTimeout = setTimeout;
+  win.clearTimeout = clearTimeout;
+  const intervals = new Set();
+  win.setInterval = (fn, ms) => {
+    const h = setInterval(fn, ms);
+    intervals.add(h);
+    return h;
+  };
+  win.clearInterval = (h) => {
+    intervals.delete(h);
+    clearInterval(h);
+  };
+  win.__teardown = () => intervals.forEach(clearInterval);
+  win.URL = URL;
+  win.URLSearchParams = URLSearchParams;
+  win.Headers = Headers;
+  win.FormData = FormData;
+  win.Blob = Blob;
+  win.ArrayBuffer = ArrayBuffer;
+  win.Uint8Array = Uint8Array;
+  win.Promise = Promise;
+  win.JSON = JSON;
+  win.Math = Math;
+  win.Date = Date;
+  win.Error = Error;
+  win.Event = Event;
+  win.Response = Response;
+  win.Response.prototype.clone = Response.prototype.clone;
+
+  win.addEventListener = (type, fn) => {
+    (listeners[type] || (listeners[type] = [])).push(fn);
+  };
+  win.postMessage = (msg) => {
+    if (!msg || msg.__ns !== '__BILI_VIP__') return;
+    if (msg.type === 'hello') {
+      setTimeout(() => dispatch({ type: 'welcome', token: TOKEN, cfg: CFG }), 0);
+      return;
+    }
+    if (msg.type === 'req') {
+      state.sent.push(msg);
+      const res = responder ? responder(msg) : { passthrough: true };
+      if (!res) return; // 模拟沙箱完全没有回应
+      setTimeout(() => dispatch({ type: 'resp', id: msg.id, token: TOKEN, ...res }), 0);
+    }
+  };
+  function dispatch(data) {
+    for (const fn of listeners.message || []) fn({ data: { __ns: '__BILI_VIP__', ...data }, source: vmGlobalRef });
+  }
+  let vmGlobalRef = null;
+  win.__dispatch = dispatch;
+
+  // 假的原生 XHR：只关心「有没有真的发出去」
+  class FakeXHR {
+    constructor() {
+      this.readyState = 0;
+      this.status = 0;
+      this.responseType = '';
+      this._headers = {};
+    }
+    open(method, url) {
+      this._method = method;
+      this._url = url;
+    }
+    setRequestHeader(k, v) {
+      this._headers[k] = v;
+    }
+    send() {
+      state.fetched.push({ kind: 'xhr', url: this._url });
+    }
+    addEventListener() {}
+    removeEventListener() {}
+    dispatchEvent() {
+      return true;
+    }
+  }
+  win.XMLHttpRequest = FakeXHR;
+
+  const realFetch = (url) =>
+    Promise.resolve(
+      new Response(JSON.stringify({ code: 0, data: { vipStatus: 0, vipType: 0, vip: { status: 0, type: 0 }, from: 'A-account' } }), {
+        headers: { 'content-type': 'application/json' }
+      })
+    );
+  win.fetch = (input) => {
+    const url = typeof input === 'string' ? input : input.url;
+    state.fetched.push({ kind: 'fetch', url });
+    return realFetch(url);
+  };
+
+  const CFG = {
+    ns: '__BILI_VIP__',
+    token: TOKEN,
+    hosts: ['api.bilibili.com', 'api.live.bilibili.com'],
+    sandboxEntries: [
+      { host: 'api.bilibili.com', path: '/x/player/wbi/playurl', method: 'GET' },
+      { host: 'api.bilibili.com', path: '/ogv/player/playview', method: 'POST' }
+    ],
+    localEntries: [{ host: 'api.bilibili.com', path: '/x/web-interface/nav' }],
+    timeoutMs: 2000,
+    hidePlayinfo: true,
+    patchUi: true,
+    prefetch: false,
+    ...cfgOverrides
+  };
+
+  win.__INITIAL_STATE__ = { videoData: { bvid: 'BV1xx', cid: 123 }, user: { vipStatus: 0, vipType: 0 } };
+  win.__playinfo__ = { data: { quality: 32 } }; // 模拟 SSR 内嵌的播放信息
+
+  vm.createContext(win);
+  vm.runInContext(HOOK.replace('__BILI_VIP_CFG__', JSON.stringify(CFG)), win, { filename: 'hook.js' });
+  // vm 的 context 会给出一层代理，VM 内的 window !== 宿主的 win。
+  // 真实浏览器里 ev.source 就是同一个 window，这里必须取 VM 自己的 globalThis 才等价。
+  const vmGlobal = vm.runInContext('globalThis', win);
+  vmGlobalRef = vmGlobal;
+
+  return { win, state, FakeXHR, vmGlobal };
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* ---------------- 用例 ---------------- */
+
+console.log('\n[1] SSR 的 __playinfo__ 按配置屏蔽');
+{
+  const on = makeEnv({ hidePlayinfo: true });
+  await sleep(260); // 等 SSR 会员字段轮询跑一次
+  check('启用借用时读不到 __playinfo__', on.win.__playinfo__ === undefined, on.win.__playinfo__);
+  check('vipStatus 被改成 1', on.win.__INITIAL_STATE__.user.vipStatus === 1);
+  on.win.__teardown();
+
+  const off = makeEnv({ hidePlayinfo: false });
+  check('未启用时 __playinfo__ 原样可读', off.win.__playinfo__ && off.win.__playinfo__.data.quality === 32);
+  off.win.__teardown();
+}
+
+console.log('\n[2] 白名单内的 XHR 转交沙箱并模拟响应');
+{
+  const { win, state, FakeXHR } = makeEnv({}, () => ({
+    passthrough: false,
+    status: 200,
+    statusText: 'OK',
+    body: JSON.stringify({ code: 0, data: { quality: 120, from: 'B-account' } }),
+    headersRaw: 'content-type: application/json'
+  }));
+
+  const xhr = new FakeXHR();
+  xhr.open('GET', '//api.bilibili.com/x/player/wbi/playurl?bvid=BV1xx&cid=1');
+  xhr.send();
+  await sleep(30);
+
+  check('已向沙箱发出请求', state.sent.length === 1, state.sent.length);
+  check('url 被补成绝对地址', state.sent[0].url.startsWith('https://api.bilibili.com/x/player/wbi/playurl'), state.sent[0].url);
+  check('没有回落到原生 send', state.fetched.length === 0, state.fetched);
+  check('readyState 推进到 4', xhr.readyState === 4, xhr.readyState);
+  check('status 为 200', xhr.status === 200);
+  check('responseText 是 B 的响应', JSON.parse(xhr.responseText).data.quality === 120);
+  check('getResponseHeader 可用', xhr.getResponseHeader('content-type') === 'application/json');
+}
+
+console.log('\n[3] 非白名单请求原样放行');
+{
+  const { state, FakeXHR } = makeEnv();
+  const xhr = new FakeXHR();
+  xhr.open('GET', '//api.bilibili.com/x/web-interface/view/detail?bvid=BV1xx');
+  xhr.send();
+  await sleep(20);
+  check('没有转交沙箱', state.sent.length === 0);
+  check('走了原生 send', state.fetched.length === 1 && state.fetched[0].url.includes('/x/web-interface/view/detail'));
+
+  const xhr2 = new FakeXHR();
+  xhr2.open('GET', 'https://api.bilibili.com/x/player/wbi/playurlXX');
+  xhr2.send();
+  await sleep(10);
+  check('相似路径不会误伤', state.fetched.length === 2);
+
+  const xhr3 = new FakeXHR();
+  xhr3.open('GET', 'https://evil.com/x/player/wbi/playurl');
+  xhr3.send();
+  await sleep(10);
+  check('非白名单主机不会误伤', state.fetched.length === 3);
+}
+
+console.log('\n[4] 方法不匹配时不转交');
+{
+  const { state, FakeXHR } = makeEnv();
+  const xhr = new FakeXHR();
+  xhr.open('GET', '/ogv/player/playview?ep_id=1');
+  xhr.send();
+  await sleep(10);
+  check('GET 不会打到只允许 POST 的端点', state.sent.length === 0 && state.fetched.length === 1);
+
+  const xhr2 = new FakeXHR();
+  xhr2.open('POST', '//api.bilibili.com/ogv/player/playview?ep_id=1');
+  xhr2.send('{}');
+  await sleep(10);
+  check('POST 会转交', state.sent.length === 1, state.sent.length);
+}
+
+console.log('\n[5] fetch 路径');
+{
+  const { win, state } = makeEnv({}, () => ({
+    passthrough: false,
+    status: 200,
+    statusText: 'OK',
+    body: JSON.stringify({ code: 0, data: { quality: 127 } }),
+    headersRaw: 'content-type: application/json'
+  }));
+  const resp = await win.fetch('//api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=1');
+  const j = await resp.json();
+  check('fetch 返回 B 的数据', j.data.quality === 127, j);
+  check('没有回落到原生 fetch', state.fetched.length === 0);
+
+  const resp2 = await win.fetch('//api.bilibili.com/x/web-interface/view/detail');
+  check('非白名单走原生 fetch', state.fetched.length === 1);
+  check('原生响应可正常读取', (await resp2.json()).code === 0);
+}
+
+console.log('\n[6] 沙箱判定 passthrough 时回落到原生请求');
+{
+  const { win, state, FakeXHR } = makeEnv({}, () => ({ passthrough: true }));
+  const xhr = new FakeXHR();
+  xhr.open('GET', '//api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=1');
+  xhr.send();
+  await sleep(20);
+  check('回落到原生 send', state.fetched.length === 1, state.fetched);
+  check('XHR 状态保持未完成', xhr.readyState !== 4);
+}
+
+console.log('\n[7] 沙箱不回应时靠超时兜底（不永久熔断）');
+{
+  const { state, FakeXHR } = makeEnv({}, () => null); // responder 返回 undefined → 永不回应
+  const xhr = new FakeXHR();
+  xhr.open('GET', '//api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=1');
+  xhr.send();
+  await sleep(20);
+  check('超时前不会重复发原生请求', state.fetched.length === 0);
+}
+
+console.log('\n[8] 本地伪装接口不打扰沙箱');
+{
+  const { win, state, FakeXHR } = makeEnv();
+  const xhr = new FakeXHR();
+  xhr.open('GET', '//api.bilibili.com/x/web-interface/nav');
+  xhr.send();
+  await sleep(40);
+  check('nav 没有转交沙箱', state.sent.length === 0);
+  check('用原生 fetch 取回并本地改写', state.fetched.some((f) => f.url.includes('/x/web-interface/nav')));
+  check('vipStatus 被改成 1', JSON.parse(xhr.responseText).data.vipStatus === 1);
+}
+
+console.log('\n[9] 总开关关闭（沙箱回放行）时对页面完全无感');
+{
+  const env = makeEnv({}, () => ({ passthrough: true }));
+  const xhr = new env.FakeXHR();
+  xhr.open('GET', '//api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=1');
+  xhr.send();
+  await sleep(20);
+  check('走原生请求', env.state.fetched.length === 1);
+  check('XHR 不被伪造完成态', xhr.readyState !== 4);
+  env.win.__teardown();
+}
+
+console.log('');
+if (failed) {
+  console.error(`\x1b[31m${failed} 项失败\x1b[0m`);
+  process.exit(1);
+}
+console.log('\x1b[32m全部通过\x1b[0m');

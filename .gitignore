@@ -1,0 +1,26 @@
+# 依赖与缓存
+node_modules/
+.eslintcache
+
+# 构建产物 —— 由 npm run build / release 生成，不入库
+dist/
+release/
+
+# 日志与编辑器
+*.log
+npm-debug.log*
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── 本地凭证：绝不能进版本库 ──────────────────────────────
+# 里面是 B 站账号的真实 SESSDATA，等同于登录态。
+# 一旦提交过，即使后续删除，git 历史里仍可翻出来，只能改密码作废。
+credentials/
+.verify.local.json
+.cookies.local.json
+*.cookie
+*-cookie.txt
+.env
+.env.*
