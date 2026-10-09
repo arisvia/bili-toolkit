@@ -24,3 +24,5 @@ credentials/
 *-cookie.txt
 .env
 .env.*
+# ÁÙÊ±ÎÄ¼ş
+.commit-msg.tmp
