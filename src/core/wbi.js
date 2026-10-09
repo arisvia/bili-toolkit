@@ -2,12 +2,16 @@
  * WBI 签名（B 站接口鉴权）。
  *
  * 正确流程：
- *   1. 从 /x/web-interface/wbi/img 取 img_key / sub_key
+ *   1. 取 img_key / sub_key —— 现以 /x/web-interface/nav 的 data.wbi_img 为主源
+ *      （旧的 /x/web-interface/wbi/img 已下线，见 session.js 与 docs/findings.md）
  *   2. 按固定置换表拼出 32 位 mixinKey
  *   3. 参数（含 wts）按 key 升序、值做 encodeURIComponent 并去掉 !'()* 后拼接
  *   4. md5(query + mixinKey) -> w_rid
  *
- * 关键点：只要改了 query（我们会抬高 qn/fnval），就必须重签，否则服务端返回 -403。
+ * 关于「改参数不重签会 -403」：实测服务端**当前并不校验** w_rid
+ * （带签名 / 全零签名 / 完全不带都返回 code=0）。
+ * 重签保留是为了「万一恢复校验」，且改参数后重签总是安全的，
+ * 但不要把它当成当前生效的必要步骤。
  */
 import { md5 } from './md5.js';
 

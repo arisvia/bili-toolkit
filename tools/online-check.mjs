@@ -50,6 +50,21 @@ async function resolveSampleVideo() {
 
 const { buildMixinKey, signUrl, extractWbiKeys } = await loadWbi();
 
+console.log('\n[0] 旧密钥端点是否真的下线了（决定 session.js 该从哪取密钥）');
+const oldWbi = await fetch('https://api.bilibili.com/x/web-interface/wbi/img', {
+  headers: { Referer: 'https://www.bilibili.com/', 'User-Agent': 'Mozilla/5.0' }
+});
+let oldWbiCode = 'HTTP ' + oldWbi.status;
+try {
+  oldWbiCode = (await oldWbi.json()).code;
+} catch { /* 非 JSON，保留 HTTP 状态码 */ }
+console.log(`      /x/web-interface/wbi/img → ${oldWbiCode}`);
+console.log(
+  Number(oldWbiCode) === 0
+    ? '      → 该端点又活了：可以改回直取，省掉一次 nav 往返（记得同步 docs/findings.md）'
+    : '      → 已下线。密钥只能从 nav 的 data.wbi_img 取（当前实现即如此）'
+);
+
 console.log('\n[1] 服务端当前 wbi 密钥');
 const nav = await api('https://api.bilibili.com/x/web-interface/nav');
 const keys = extractWbiKeys(nav);
@@ -123,6 +138,45 @@ const legacyV2 = await api(`https://api.bilibili.com/x/player/v2?bvid=${sample.b
 check('/x/player/v2 可用（旧版播放器）', legacyV2.code === 0, `code=${legacyV2.code}`);
 const live = await api('https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo?room_id=1&protocol=0,1&format=0,1,2,0&codec=0&qn=10000&platform=web&ptype=8');
 check('/xlive/web-room/v2/index/getRoomPlayInfo 路径正确', live.code === 0, `code=${live.code}`);
+
+console.log('\n[7] 区域（geoip）参数对服务端是否真的有影响（诚实边界，不可夸大）');
+// 实测 9 种取值都不改变 nav 的 ip_region —— 地区授权由服务端按 IP 判定。
+// 这条断言的用意是：一旦服务端哪天开始认 geoip，CI 立刻失败提醒我们更新 region.js 与文案。
+const GEOIPS = ['cn', 'cn_c', 'oversea', 'hk', 'tw', 'mo', 'intl', 'oversea_cn', 'intl_hk'];
+const baselineRegion = nav?.data?.ip_region;
+const geoResults = [];
+for (const g of GEOIPS) {
+  const r = await api('https://api.bilibili.com/x/web-interface/nav?geoip=' + g);
+  geoResults.push({ g, code: r.code, region: r?.data?.ip_region });
+}
+const distinct = [...new Set(geoResults.map((r) => JSON.stringify(r.region)))];
+console.log(`      基准 ip_region = ${JSON.stringify(baselineRegion)}`);
+console.log(`      ${GEOIPS.length} 种 geoip 取值 → ${distinct.length} 种不同的 ip_region`);
+if (distinct.length > 1) {
+  console.log('      ' + geoResults.map((r) => `${r.g}=${r.code}:${JSON.stringify(r.region)}`).join('\n      '));
+}
+check(
+  `${GEOIPS.length} 种 geoip 取值均不改变服务端 ip_region（地区只能改页面渲染形态）`,
+  distinct.length === 1,
+  distinct.length + ' 种结果'
+);
+
+console.log('\n[8] 画质清单字段不能当作「账号有无权益」的判据');
+// 实测：匿名请求的 accept_quality / support_formats 同样是完整的 [120,112,80,64,32,16]，
+// 但 dash.video 里最大只有 32(480P)。说明这两个字段是**固定档位表**，与账号权益无关。
+// 会员状态只能读 nav 的 data.vipStatus —— 见 patch.js 的 extractVipFromNav()。
+const dashProbe = await api(signed.href);
+const dashIds = (dashProbe?.data?.dash?.video || []).map((v) => v.id);
+const dashMax = dashIds.length ? Math.max(...dashIds) : 0;
+const acceptList = dashProbe?.data?.accept_quality || [];
+console.log(`      匿名 accept_quality = ${JSON.stringify(acceptList)}`);
+console.log(`      匿名 dash.video 最大流 = ${dashMax} (480P)`);
+check(
+  'accept_quality 含 4K(120)，但匿名 dash 里并不存在 4K 流 —— 不能用它判定会员身份',
+  acceptList.includes(120) && dashMax < 120,
+  `accept=${JSON.stringify(acceptList)} dashMax=${dashMax}`
+);
+console.log('      → 会员状态只认 nav 的 data.vipStatus（patch.js extractVipFromNav）');
 
 console.log('');
 if (failed) {
