@@ -42,6 +42,12 @@ import {
 } from './accounts.js';
 import { applyAccount, staleKeysFor, presentIdentityKeys, canWriteCookies } from './browser-cookie.js';
 
+const BROWSER_ID_TTL_MS = 30 * 1000;
+let browserWhoCache = { at: 0, who: { mid: '', uname: '', vipStatus: 0 } };
+
+export function invalidateBrowserWho() {
+  browserWhoCache = { at: 0, who: { mid: '', uname: '', vipStatus: 0 } };
+}
 /** 换借用源 / 换账号后，播放器侧的缓存与签名必须一起失效 */
 function afterSwitch() {
   resetCache();
@@ -154,8 +160,10 @@ export async function switchLoginTo(id) {
   if (!canWriteCookies()) {
     return { ok: false, reason: 'unsupported', needReload: false, stale: [], written: [] };
   }
-  if (target.id === activeAccount()?.id && hasCookie()) {
-    // 已经是当前身份了，但用户可能就是想重新写一遍以修复失效 Cookie —— 允许，只是不必刷新
+  const who = browserWhoCache.who;
+  const isAlreadyInBrowser = !!who.mid && who.mid === target.mid;
+  if (target.id === activeAccount()?.id && hasCookie() && isAlreadyInBrowser) {
+    // 已经是当前身份且浏览器也确实是它，重新写一遍修复 Cookie，不必刷新
     const already = await applyAccount(target.cookie, []);
     return {
       ok: already.ok,
@@ -242,21 +250,9 @@ export function overview() {
     borrowedFromOther: !!active && !!borrowAcc && active.id !== borrowAcc.id,
     canWrite: canWriteCookies(),
     hasCsrf: !!getBCsrf(),
-    effectiveMasked: hasCookie() ? maskSummary() : ''
+    effectiveMasked: hasCookie() ? maskSummary() : '',
+    browserMid: browserWhoCache.who.mid || ''
   };
-}
-
-/**
- * 浏览器身份缓存的存活期。
- *
- * 面板每次展开、每次池子操作都会重绘，没有缓存的话等于每次都发一个 nav。
- * 30 秒足够短 —— 用户真去登录/登出，30 秒后必然反映出来。
- */
-const BROWSER_ID_TTL_MS = 30 * 1000;
-let browserWhoCache = { at: 0, who: { mid: '', uname: '', vipStatus: 0 } };
-
-export function invalidateBrowserWho() {
-  browserWhoCache = { at: 0, who: { mid: '', uname: '', vipStatus: 0 } };
 }
 
 /**

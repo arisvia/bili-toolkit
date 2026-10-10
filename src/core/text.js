@@ -116,6 +116,7 @@ export const TEXT = {
     autoImportTip: '浏览器当前登录：',
     /** 不在池中且读不到凭证 —— 文案只说「本浏览器读不到」，不断言 HttpOnly */
     notInPoolTip: '浏览器当前登录的这个号还不在池子里，且本浏览器读不到它的登录 Cookie，需要从 DevTools 复制一次',
+    notLoggedInTip: '浏览器当前未登录。点击账号卡片上的「登录到此号」即可写入 Cookie 并以此身份浏览。',
     labels: {
       current: '登录中',
       /** 池里记着它是当前号，但浏览器实际登录的是别人 —— 不能再显示「登录中」 */
@@ -127,6 +128,7 @@ export const TEXT = {
     },
     actions: {
       switchTo: '切到此号',
+      loginToBrowser: '登录到此号',
       useAsBorrow: '用它借用',
       autoBorrow: '自动借用',
       autoImport: '一键加入池子',
@@ -137,6 +139,7 @@ export const TEXT = {
     },
     confirms: {
       switch: '把浏览器登录态切成这个号？弹幕、评论、投币之后都记在这个号名下。',
+      loginToBrowser: '将此账号的 Cookie 写入浏览器并登录？弹幕、评论、投币之后都记在这个号名下。',
       remove: '把这个账号从池中移除？浏览器当前登录不会被改变。'
     },
     /** 池内没有账号可用时的兜底说明（switcher 会带回更具体的原因） */
@@ -218,6 +221,7 @@ export const TEXT = {
       copiedLog: '日志已复制',
       copyFailed: '复制失败，请到控制台查看',
       savedNote: '已加入账号池',
+      savedNotLoggedIn: '已加入账号池 · 浏览器未登录，点击下方卡片「登录到此号」可登录',
       savedTwice: '这个号已在池中，已更新'
       // 这里原本有 clearConfirm（「清除已保存的 Cookie？」）。清空按钮只清输入框、
       // 不动账号池，所以没有确认步骤，文案也就没人用。

@@ -658,8 +658,34 @@ function buildPanel(body) {
   function renderBrowserWho(full) {
     for (const node of poolMismatchNodes) node.remove();
     poolMismatchNodes = [];
-    if (!full.browserMid) return; // 认不出是谁就不显示，不做任何猜测
 
+    // 动态同步每张卡片上的切号/登录按钮
+    for (const card of poolList.querySelectorAll('[data-acc]')) {
+      const id = card.dataset.acc;
+      const row = full.rows.find((r) => r.id === id);
+      if (!row) continue;
+      const isCur = full.browserMid && full.browserMid === row.mid;
+      const btn = card.querySelector('[data-role="switch"]');
+      if (isCur && btn) {
+        btn.remove();
+      } else if (!isCur && btn) {
+        btn.textContent = full.browserMid ? TEXT.pool.actions.switchTo : TEXT.pool.actions.loginToBrowser;
+      }
+    }
+
+    if (!full.browserMid) {
+      if (full.rows && full.rows.length) {
+        const tip = el('div', 'hint', TEXT.pool.notLoggedInTip);
+        tip.style.cssText = 'color:#e6a23c;margin-bottom:6px';
+        poolList.appendChild(tip);
+        poolMismatchNodes.push(tip);
+        if (currentTagNode) {
+          currentTagNode.textContent = TEXT.pool.labels.currentMismatch;
+          currentTagNode.className = 'tag muted';
+        }
+      }
+      return;
+    }
     // 池里记着的当前号与浏览器实际登录的对不上。
     // 这时**不能只加一句提示** —— 卡片上那个「登录中」本身就是错的，
     // 留着它等于让用户继续相信一个假状态。必须一起降级。
@@ -752,8 +778,11 @@ function buildPanel(body) {
     const acts = el('div');
     acts.style.cssText = 'display:flex;gap:4px;margin-top:6px;flex-wrap:wrap';
 
-    if (!r.isActive) {
-      const b = el('button', 'act' + (o.canWrite ? ' pri' : ''), TEXT.pool.actions.switchTo);
+    const isBrowserCurrent = o.browserMid && o.browserMid === r.mid;
+    if (!isBrowserCurrent) {
+      const switchText = o.browserMid ? TEXT.pool.actions.switchTo : TEXT.pool.actions.loginToBrowser;
+      const b = el('button', 'act' + (o.canWrite ? ' pri' : ''), switchText);
+      b.dataset.role = 'switch';
       b.disabled = !o.canWrite;
       if (!o.canWrite) b.title = TEXT.pool.states.switchUnsupported;
       b.addEventListener('click', () => doSwitch(r.id));
@@ -824,7 +853,9 @@ function buildPanel(body) {
   };
 
   const doSwitch = async (id) => {
-    if (!confirm(TEXT.pool.confirms.switch)) return;
+    const isLogin = !overview().browserMid;
+    const confirmMsg = isLogin ? TEXT.pool.confirms.loginToBrowser : TEXT.pool.confirms.switch;
+    if (!confirm(confirmMsg)) return;
     say(TEXT.pool.states.switching, 'var(--fg)');
     const r = await switchLoginTo(id);
     if (!r.ok) {
@@ -959,7 +990,7 @@ function buildPanel(body) {
           '会员：' + vip + '\n' +
           strategyLabel(r.strategy) + '\n' +
           '本机账号：' + ((r.aAccount && r.aAccount.uname) || '未登录') + '\n' +
-          (save ? (r.isNew ? TEXT.account.states.savedNote : TEXT.account.states.savedTwice) : ''),
+          (save ? (r.isNew ? (!overview().browserMid ? TEXT.account.states.savedNotLoggedIn : TEXT.account.states.savedNote) : TEXT.account.states.savedTwice) : ''),
         r.account.vipStatus === 1 ? '#00a396' : '#e6a23c'
       );
       if (save) {
