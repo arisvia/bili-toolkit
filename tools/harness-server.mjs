@@ -53,9 +53,9 @@ http
   })
   .listen(PORT, () => {
     console.log('harness 已启动：');
-    console.log(`  端到端冒��   http://localhost:${PORT}/`);
+    console.log(`  端到端冒烟   http://localhost:${PORT}/`);
     console.log(`  Cookie 工具  http://localhost:${PORT}/fixtures/cookie-helper.html`);
-    console.log(`  构建产物     http://localhost:${PORT}/dist/bilibili-vip-proxy.user.js`);
+    console.log(`  构建产物     http://localhost:${PORT}/dist/bili-toolkit.user.js`);
     console.log('');
     console.log('（页面底部逐条列出 ✔/✖；Ctrl+F12 可看 console）');
   });

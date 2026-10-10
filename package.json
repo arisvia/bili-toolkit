@@ -1,6 +1,6 @@
 {
   "name": "bili-toolkit",
-  "version": "2.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "B 站用户脚本工具箱：多账号权益借用、一键切换、播放体验增强",
@@ -24,8 +24,9 @@
     "build": "node build.mjs",
     "dev": "node build.mjs --dev --watch",
     "check": "node build.mjs --check",
-    "test": "node test/smoke.test.mjs && node test/cookie-parse.test.mjs && node test/proxy.test.mjs && node test/hook.test.mjs",
-    "verify": "npm run test && npm run verify:online && npm run build",
+    "check:contrast": "node tools/contrast-check.mjs",
+    "test": "node test/smoke.test.mjs && node test/cookie-parse.test.mjs && node test/accounts.test.mjs && node test/proxy.test.mjs && node test/hook.test.mjs",
+    "verify": "npm run test && npm run check:contrast && npm run verify:online && npm run build",
     "verify:online": "node tools/online-check.mjs",
     "verify:local": "node tools/verify-local.mjs",
     "verify:cookie": "node tools/verify-cookie.mjs",
@@ -34,7 +35,8 @@
     "release": "node tools/release.mjs"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "uqr": "^0.1.3"
   },
   "engines": {
     "node": ">=20"

@@ -38,6 +38,10 @@ const REGION_LABELS = {
  * 把响应对象改成指定区域形态。
  * 改动范围刻意保守：只碰明确是「区域」的字段，不碰任何播放/鉴权字段。
  *
+ * ⚠ 主世界钩子里有一份**独立副本**（`src/injected/hook.js` 的 patchSsRegion /
+ * patchRegionIn），因为钩子是字符串化注入的独立作用域，import 不进来。
+ * 改动这里的字段清单时，必须同步改那边 —— 两边静默分叉过一次了。
+ *
  * @param {object} root  解析后的 JSON 根对象
  * @param {string} mode  REGION_MODES 的 key
  * @returns {number}     改动的字段数（用于日志/诊断）
@@ -103,41 +107,6 @@ export function patchRegion(root, mode) {
   return changed;
 }
 
-/**
- * 页面主世界的 SSR 状态（__INITIAL_STATE__）里的区域字段。
- * 这些字段在服务端渲染时就写死了，改它们可以让首屏就是目标区域形态。
- */
-export function patchSsRegion(state, mode) {
-  const cfg = REGION_MODES[mode];
-  if (!cfg || cfg.id === 'off' || !state || typeof state !== 'object') return 0;
-  let changed = 0;
-  const apply = (holder) => {
-    if (!holder || typeof holder !== 'object') return;
-    if (typeof holder.ip_region === 'string' && holder.ip_region !== cfg.ipRegion) {
-      holder.ip_region = cfg.ipRegion;
-      changed++;
-    }
-    if (holder.rights && typeof holder.rights === 'object') {
-      if (typeof holder.rights.area_limit === 'number' && holder.rights.area_limit !== cfg.areaLimit) {
-        holder.rights.area_limit = cfg.areaLimit;
-        changed++;
-      }
-      if (holder.rights.ban_area_show) {
-        holder.rights.ban_area_show = 0;
-        changed++;
-      }
-    }
-  };
-  apply(state);
-  apply(state.user);
-  apply(state.videoData);
-  apply(state.epInfo);
-  apply(state.videoInfo);
-  apply(state.mediaInfo);
-  return changed;
-}
-
-/** 供 UI 展示：当前服务端判定我在哪个区 */
-export function describeMode(mode) {
-  return REGION_MODES[mode] || REGION_MODES.off;
-}
+// 这里原本还有一份 patchSsRegion（SSR 用）和 describeMode。
+// 前者从未被调用 —— 主世界钩子里有一份自己的副本，见 patchRegion 上方的警告；
+// 后者没有任何界面用到。留着它们只会让人以为「改这份就够了」，而实际改了不生效。

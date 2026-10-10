@@ -79,11 +79,6 @@ async function req(url, opts = {}) {
   }
 }
 
-const QUALITY_NAME = {
-  6: '240P', 16: '360P', 32: '480P', 64: '720P', 74: '720P60', 80: '1080P',
-  112: '1080P+', 116: '1080P60', 120: '4K', 125: 'HDR', 126: '杜比视界', 127: '8K'
-};
-const qName = (q) => (q === undefined || q === null ? '—' : `${q} (${QUALITY_NAME[q] || '?'})`);
 
 function describePlayurl(j) {
   const d = j && j.data;
@@ -187,7 +182,7 @@ const v2B = (await req(`https://api.bilibili.com/x/player/wbi/v2?bvid=${bvid}&ci
 const acceptKeys = Object.keys(v2B.data || {}).filter((k) => k.startsWith('accept'));
 console.log(line('登录态下 v2 的 accept_* 字段', acceptKeys.length ? acceptKeys.join(',') : '（仍然没有）'));
 console.log('  ⇒ ' + (acceptKeys.length
-  ? '登录态下确实存在 accept_*，需要把 v2 改回 merge 模式'
+  ? '登录态下 v2 确实有 accept_* —— 结论变了，需重新评估是否该把 v2 纳入代理'
   : '确认 accept_* 只在 playurl 里，本地伪装即可，不必多发一次请求'));
 
 console.log('\n[6] 参数抬高是否会引入副作用（对比 Q2/Q3 的流数量）');

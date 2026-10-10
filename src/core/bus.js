@@ -29,17 +29,35 @@ export function pushConfig(cfg) {
   post({ type: 'cfg', token: channelToken, cfg });
 }
 
-export function notifyReady(hookReady) {
-  post({ type: 'ready', token: channelToken, hookReady: !!hookReady });
-}
+// 这里原本有个 notifyReady()，往钩子发 type:'ready'。钩子从来没监听这个类型，
+// 沙箱也从来没调用过这个函数 —— 握手方向是单向的（钩子 hello → 沙箱 welcome）。
+// 真要报状态，钩子回的是 'pong'（见 pingHook / getHookSelfCheck）。
 
 function respond(id, data) {
   post(Object.assign({ type: 'resp', id, token: channelToken }, data));
 }
 
 let hookAlive = false;
+/** 钩子自检结果。null = 还没问过；对象见 hook.js 的 selfState() 字段说明 */
+let hookSelfCheck = null;
 export function isHookAlive() {
   return hookAlive;
+}
+export function getHookSelfCheck() {
+  return hookSelfCheck;
+}
+
+/**
+ * 问一次钩子的当前状态。
+ *
+ * 为什么要主动 ping 而不只是等 hello：hello 只能证明「脚本跑起来了」，
+ * 而最难查的故障是「首次不生效、切画质后才行」—— 那时钩子活着，
+ * 拦截链路却可能根本没接上。面板打开时问一次，把静默故障变成可见信号。
+ */
+export function pingHook() {
+  if (!hookAlive) return false;
+  post({ type: 'ping', token: channelToken });
+  return true;
 }
 
 export function startBus(getConfig) {
@@ -53,9 +71,14 @@ export function startBus(getConfig) {
     switch (d.type) {
       case 'hello': {
         hookAlive = true;
+        if (d.state) hookSelfCheck = d.state;
         post({ type: 'welcome', token: channelToken });
         // 握手时立刻补发一次配置，覆盖「注入早于配置生成」的情况
         pushConfig(getConfig());
+        break;
+      }
+      case 'pong': {
+        hookSelfCheck = d.state || hookSelfCheck;
         break;
       }
       case 'req': {

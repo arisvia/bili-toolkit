@@ -90,6 +90,25 @@ function makeContext() {
   return ctx;
 }
 
+async function loadPlainModule(ctx, rel) {
+  const res = await esbuild.build({
+    entryPoints: [path.join(ROOT, rel)],
+    bundle: true,
+    format: 'cjs',
+    platform: 'neutral',
+    target: 'es2022',
+    write: false,
+    logLevel: 'silent'
+  });
+  vm.createContext(ctx);
+  vm.runInContext(
+    `const module={exports:{}};const exports=module.exports;\n${res.outputFiles[0].text}\n;globalThis.__m=module.exports;`,
+    ctx,
+    { filename: rel.replace(/\//g, '_') }
+  );
+  return ctx.__m;
+}
+
 async function loadProxyModule(ctx) {
   const res = await esbuild.build({
     entryPoints: [path.join(ROOT, 'src/core/proxy.js')],
@@ -208,6 +227,14 @@ console.log('\n[4] 番剧 OGV：csrf 换成 B 的，body 也同步');
   check('body 其他字段保留', JSON.parse(seen.data).business === 'play');
   check('qn 被抬高', u.searchParams.get('qn') === '127');
   check('返回 OGV 响应', r.passthrough === false && JSON.parse(r.body).data.video_info.quality === 120);
+
+  // form-urlencoded 形态：不能错拼成 cid=9csrf=b-csrf
+  await api.handleRequest({
+    url: 'https://api.bilibili.com/ogv/player/playview?ep_id=7&cid=9&qn=32',
+    method: 'POST',
+    body: 'ep_id=7&cid=9'
+  });
+  check('form-urlencoded body 正确用 & 拼接 csrf', seen.data.includes('cid=9&csrf=b-csrf'), seen.data);
 }
 
 console.log('\n[5] 业务错误 → 回退，不把错误页喂给播放器');
@@ -245,6 +272,96 @@ console.log('\n[6] -403 签名被拒 → 退回原始参数再试一次');
   check('确实重试了一次', playurlCalls.length === 2, playurlCalls.length);
   check('重试用的是未抬高参数的原始 URL', new URL(playurlCalls[1].url).searchParams.get('qn') === '32');
   check('第二次成功返回', r.passthrough === false && JSON.parse(r.body).data.quality === 64);
+}
+
+console.log('\n[6b] POST 端点的参数重试也必须退回未注入 csrf 的 body');
+{
+  // 曾经的 bug：重试时把 msg.body 原样再发一次。对 csrf:true 的 POST 端点
+  // （/ogv/player/playview、/ogv/player/playurl）来说，prepare() 已把 B 的 bili_jct
+  // 写进 prep.body，于是「退回原始参数」其实发的是 A 的 csrf + B 的 SESSDATA，
+  // 服务端必然再拒一次 —— 重试对最需要它的番剧端点反而永远失败。
+  calls.length = 0;
+  replies.clear();
+  const ctx = makeContext();
+  ctx.GM_setValue('b.cookie', B_COOKIE);
+  const seen = [];
+  replies.set('https://api.bilibili.com/ogv/player/playview', (rec) => {
+    seen.push(JSON.parse(rec.data).csrf);
+    if (seen.length === 1) return { text: JSON.stringify({ code: -403, message: '签名错误' }) };
+    return { text: JSON.stringify({ code: 0, data: { video_info: { quality: 120 } } }) };
+  });
+  const api = await loadProxyModule(ctx);
+  const r = await api.handleRequest({
+    url: 'https://api.bilibili.com/ogv/player/playview?ep_id=7&cid=9&qn=32&csrf=a-csrf',
+    method: 'POST',
+    body: JSON.stringify({ ep_id: 7, cid: 9, csrf: 'a-csrf', business: 'play' })
+  });
+  check('第一次用 B 的 csrf', seen[0] === 'b-csrf', seen[0]);
+  check('重试退回页面原始的 csrf（不是 A 配 B 的混合）', seen[1] === 'a-csrf', seen[1]);
+  check('最终成功', r.passthrough === false && JSON.parse(r.body).data.video_info.quality === 120);
+}
+
+console.log('\n[6c] 切号后清缓存，不能把在途的旧账号响应写回去');
+{
+  // 曾经的 bug：cacheSet 在 coalesce 之外、await 之后执行。
+  // 用户切换借用源 → resetCache() 清掉已缓存内容，但在途请求用的是旧账号 Cookie；
+  // 它回来时照原样写回，旧账号的播放地址就继续供最多一个 TTL（120 秒）。
+  calls.length = 0;
+  replies.clear();
+  const ctx = makeContext();
+  ctx.GM_setValue('b.cookie', B_COOKIE);
+  replies.set('https://api.bilibili.com/x/player/wbi/playurl', () => ({
+    text: JSON.stringify({ code: 0, data: { quality: 120 } })
+  }));
+  const api = await loadProxyModule(ctx);
+  const first = api.handleRequest({ url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=11&qn=32', method: 'GET' });
+  api.resetCache();
+  await first;
+  check('清缓存后不再接受旧在途结果', api.cacheStats().size === 0, api.cacheStats());
+  const before = calls.length;
+  await api.handleRequest({ url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=11&qn=32', method: 'GET' });
+  check('同 key 会重新联网而不是命中旧缓存', calls.length > before, { before, after: calls.length });
+  check('在途表最终清空', api.cacheStats().inflight === 0, api.cacheStats().inflight);
+}
+
+console.log('\n[6d] coalesce 与 cacheClear 的交互（缓存模块级，不走网络时序）');
+{
+  const { coalesce, cacheClear, cacheGeneration, cacheInfo } = await loadPlainModule(makeContext(), 'src/core/cache.js');
+  let resolve = null;
+  const factory = () => new Promise((r) => { resolve = r; });
+  // resolve 会被第二次调用覆盖，所以分别存
+  const resolvers = [];
+  const f = () => new Promise((r) => resolvers.push(r));
+
+  // A 在途
+  const pa = coalesce('K', f);
+  const genA = cacheGeneration();
+  // coalesce 内部是 Promise.resolve().then(factory)，factory 异步才跑，
+  // 先让出一个 microtask 让 A 真正挂起来
+  await Promise.resolve();
+  await Promise.resolve();
+  // 清缓存（模拟切号）——此刻 A 仍挂起
+  cacheClear();
+  check('代际号递增', cacheGeneration() === genA + 1, cacheGeneration());
+  // 清之后同 key 再来一个：必须注册新的在途，而且不与 A 共用
+  const pb = coalesce('K', f);
+  check('新请求不落到旧在途上', pb !== pa);
+  // A 现在才回来：它的 finally 不能把 B 的在途记录删掉
+  resolvers[0]('a-result');
+  await pa;
+  check('A 回来后 B 的在途仍登记着', cacheInfo().inflight === 1, cacheInfo().inflight);
+  // B 也回来
+  resolvers[1]('b-result');
+  const rb = await pb;
+  check('B 仍拿到自己的结果', rb === 'b-result', rb);
+  check('在途表最终清空', cacheInfo().inflight === 0, cacheInfo().inflight);
+
+  // 同代际下的正常去重不能被这次修复破坏
+  cacheClear();
+  let ran = 0;
+  const f2 = () => { ran++; return Promise.resolve('shared'); };
+  const [x, y] = await Promise.all([coalesce('S', f2), coalesce('S', f2)]);
+  check('未清缓存时仍然合并', ran === 1 && x === 'shared' && y === 'shared', { ran });
 }
 
 console.log('\n[7] 缓存：同一个 cid 连发 3 次只打一次网络');

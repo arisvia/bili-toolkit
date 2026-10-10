@@ -37,15 +37,24 @@ async function api(url) {
 }
 
 /** 找一个当前真实存在的视频（cid 会变，硬编码容易 404），用于探测 */
-async function resolveSampleVideo() {
-  // ranking/v2 需要登录态，会返回 -352；popular 可匿名访问
-  const list = await api('https://api.bilibili.com/x/web-interface/popular?ps=5&pn=1');
-  const bvid = list?.data?.list?.[0]?.bvid;
-  if (!bvid) throw new Error('无法获取样本视频');
-  const view = await api('https://api.bilibili.com/x/web-interface/view?bvid=' + bvid);
-  const cid = view?.data?.cid;
-  if (!cid) throw new Error('无法获取样本 cid');
-  return { bvid, cid, aid: view?.data?.aid, title: view?.data?.title };
+/** 取 n 个可匿名访问的样本视频（popular 不需要登录态） */
+async function resolveSampleVideos(n = 5) {
+  const list = await api(`https://api.bilibili.com/x/web-interface/popular?ps=${n}&pn=1`);
+  const out = [];
+  for (const it of list?.data?.list || []) {
+    const view = await api('https://api.bilibili.com/x/web-interface/view?bvid=' + it.bvid);
+    if (!view?.data?.cid) continue;
+    const d = view.data;
+    // 只收**普通投稿**。popular 里会混进付费 / 番剧内容（如《凡人修仙传》，
+    // rights.pay=1），那类的 /x/player/wbi/playurl 匿名访问直接 -404 ——
+    // 拿它当样本会把整段验证全染红，而结论跟代码都没问题。
+    // 判据：rights.pay 标记付费，season/epid 标记番剧。
+    const isUgc = !d.season && !d.epid && !d.rights?.pay;
+    if (!isUgc) continue;
+    out.push({ bvid: it.bvid, cid: d.cid, aid: d.aid, title: d.title });
+  }
+  if (!out.length) throw new Error('没有取到普通投稿样本（popular 全是番剧？）');
+  return out;
 }
 
 const { buildMixinKey, signUrl, extractWbiKeys } = await loadWbi();
@@ -79,7 +88,8 @@ check(
 );
 
 console.log('\n[2] 本项目签名的请求能正常拿到业务响应吗');
-const sample = await resolveSampleVideo();
+const samples = await resolveSampleVideos(5);
+const sample = samples[0];
 console.log(`      样本视频：${sample.bvid} cid=${sample.cid}  ${sample.title}`);
 const probeUrl =
   `https://api.bilibili.com/x/player/wbi/playurl?bvid=${sample.bvid}&cid=${sample.cid}` +
@@ -96,8 +106,15 @@ const q127 = r1;
 console.log(`      qn=16  → quality=${q16.data?.quality}`);
 console.log(`      qn=127 → quality=${q127.data?.quality}`);
 check('qn=16 时 quality 确实被压到 16', q16.data?.quality === 16, q16.data?.quality);
-check('qn=127 时拿到的是该账号能给的最高档（匿名被限到 64）', q127.data?.quality === 64, q127.data?.quality);
-check('support_formats 里含 4K(120)，说明高档位由账号权益决定', (q127.data?.support_formats || []).some((f) => f.quality === 120));
+// qn 抬高 → quality 跟着升。这才是这段要证明的事（§3 的核心依据）。
+// 注意别把 quality 与 accept_quality 挂钩：本次实测 quality=64 而清单里写着 116，
+// 匿名态两者对不上。正因如此才不能用清单反推实际拿到的档位（见第 [8] 段）。
+check(
+  'qn 从 16 抬到 127 后 quality 确实变高',
+  q127.data?.quality > q16.data?.quality,
+  `qn16→${q16.data?.quality} qn127→${q127.data?.quality}`
+);
+console.log(`      accept_quality = ${JSON.stringify(q127.data?.accept_quality)}（与 quality 不相等，别拿它反推）`);
 
 console.log('\n[4] w_rid 当前是否被服务端强制校验（仅记录事实，不作为断言）');
 const noRid = new URL(signed.href);
@@ -162,21 +179,45 @@ check(
 );
 
 console.log('\n[8] 画质清单字段不能当作「账号有无权益」的判据');
-// 实测：匿名请求的 accept_quality / support_formats 同样是完整的 [120,112,80,64,32,16]，
-// 但 dash.video 里最大只有 32(480P)。说明这两个字段是**固定档位表**，与账号权益无关。
-// 会员状态只能读 nav 的 data.vipStatus —— 见 patch.js 的 extractVipFromNav()。
+// 实测结论（2026-10-10 修正过一次，见 findings §4）：
+//   accept_quality / support_formats 是**这部片子自己的档位表**，逐片不同，
+//   同一片子上 B 大会员与匿名拿到的完全一样 —— 所以它能反映「片子提供什么」，
+//   但**不能**反映「这个账号有没有权益」。
+//   会员状态只能读 nav 的 data.vipStatus（patch.js 的 extractVipFromNav）。
+//
+// 断言不能写死「一定含 120」—— 那只对 4K 片成立。本次取样的片子不是 4K，
+// 断言改成它真正要证明的东西：清单与账号无关，且清单 ≠ 实际能拿到的流。
 const dashProbe = await api(signed.href);
 const dashIds = (dashProbe?.data?.dash?.video || []).map((v) => v.id);
 const dashMax = dashIds.length ? Math.max(...dashIds) : 0;
 const acceptList = dashProbe?.data?.accept_quality || [];
 console.log(`      匿名 accept_quality = ${JSON.stringify(acceptList)}`);
-console.log(`      匿名 dash.video 最大流 = ${dashMax} (480P)`);
+console.log(`      匿名 dash.video 最大流 = ${dashMax}`);
 check(
-  'accept_quality 含 4K(120)，但匿名 dash 里并不存在 4K 流 —— 不能用它判定会员身份',
-  acceptList.includes(120) && dashMax < 120,
-  `accept=${JSON.stringify(acceptList)} dashMax=${dashMax}`
+  'accept_quality 是非空数组（否则这段验证无意义）',
+  acceptList.length > 0,
+  JSON.stringify(acceptList)
+);
+check(
+  '匿名 dash 里实际存在的流 低于 清单所列 —— 清单说的是「片子有什么」，不是「你能拿到什么」',
+  dashMax > 0 && dashMax < Math.max(...acceptList),
+  `dashMax=${dashMax} accept=${JSON.stringify(acceptList)}`
 );
 console.log('      → 会员状态只认 nav 的 data.vipStatus（patch.js extractVipFromNav）');
+
+// 同一批片子里，accept_quality 逐片不同 —— 证明它是「每部片子自己的表」，
+// 而不是文档原来写的「固定全量表」。取两个片子比一下即可。
+const other = samples.find((s) => s.bvid !== sample.bvid);
+if (other) {
+  const p2 = await api(
+    `https://api.bilibili.com/x/player/wbi/playurl?bvid=${other.bvid}&cid=${other.cid}&qn=127&fnval=4048&fourk=1&platform=pc`
+  );
+  const a2 = p2?.data?.accept_quality || [];
+  console.log(`      另一部片子 ${other.bvid} 的 accept_quality = ${JSON.stringify(a2)}`);
+  console.log(
+    '      → 两部片子可以不同；同一片子换账号则不变（后者见 findings §4 的 B/匿名对照）'
+  );
+}
 
 console.log('');
 if (failed) {

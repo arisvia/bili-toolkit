@@ -37,6 +37,17 @@
   var pending = Object.create(null);
   var seq = 1;
 
+  /* ---------------- 自检状态 ----------------
+   * 「脚本跑起来了」和「拦截真的接管了请求」是两件事，必须分开报。
+   * 最难查的故障是「首次不生效、切画质后才行」——它静默，而面板当时没有任何
+   * 信号能证明钩子到底有没有接管。这里把两件事都做成可观测的：
+   *   intercepted      —— 已经转交沙箱的请求数（>0 才说明拦截链路是通的）
+   *   playinfoHooked   —— __playinfo__ 的访问器有没有装上
+   *   playinfoHidden   —— 装上之后，当前是否真的在返回 undefined
+   */
+  var intercepted = 0;
+  var playinfoHooked = false;
+
   /* ---------------- URL 工具 ---------------- */
 
   function toAbsolute(u) {
@@ -103,6 +114,8 @@
       payload.type = 'req';
       payload.id = id;
       payload.token = token;
+      // 转交成功即计数。自检要看的是「拦截链路通不通」，不是沙箱答得快不快。
+      intercepted++;
       post(payload);
     });
   }
@@ -121,8 +134,32 @@
       }
     } else if (d.type === 'welcome' || d.type === 'cfg') {
       applyCfg(d.cfg);
+    } else if (d.type === 'ping') {
+      // 面板主动问一次当前状态。只在沙箱问的时候才回，不主动刷消息。
+      post({ type: 'pong', token: token, state: selfState() });
     }
   });
+
+  /** 供沙箱自检使用。字段含义见上方注释，别改名字（沙箱按名字读）。 */
+  function selfState() {
+    // 必须区分「装了访问器」和「真的在返回 undefined」。
+    // 曾经的写法只看 typeof window.__playinfo__ === 'undefined'，
+    // 而 document-start 那一刻 SSR 还没跑、playinfoValue 本来就是 undefined，
+    // 于是借用功能**没开**时也报「已隐藏」——诊断给出的是假信号。
+    // hidePlayinfo 是本地读的钩子开关，才是这里的判据。
+    var hidden = false;
+    try {
+      hidden = hidePlayinfo && typeof window.__playinfo__ === 'undefined';
+    } catch (e) {}
+    return {
+      intercepted: intercepted,
+      playinfoHooked: playinfoHooked,
+      playinfoHidden: playinfoHooked && hidden,
+      // 借用总开关是否要求隐藏 playinfo。false 时「未隐藏」是正常状态，不是故障。
+      hidePlayinfo: hidePlayinfo,
+      sandboxAlive: sandboxAlive
+    };
+  }
 
   function applyCfg(cfg) {
     if (!cfg) return;
@@ -244,21 +281,16 @@
       fire('loadstart');
       step(2); // HEADERS_RECEIVED
       step(3); // LOADING
-      try {
-        if (typeof xhr.onprogress === 'function') {
-          xhr.onprogress({ lengthComputable: true, loaded: body.length, total: body.length });
-        }
-      } catch (e) {}
+            // 只派发事件，不再直接调 xhr.onXxx。
+      // 曾经的写法是两者都做，结果 onprogress / onload / onloadend 各触发两遍：
+      // onXxx 是 XMLHttpRequestEventTarget 上的 IDL 事件处理器属性，
+      // 给 xhr.onload 赋值就等同于注册了 load 监听器，dispatchEvent 会再调它一次。
+      // 用 addEventListener 注册的只受派发影响，直接调用对它无效 ——
+      // 所以单靠派发就能同时覆盖两种注册方式，直接调用纯属重复。
       fire('progress', { lengthComputable: true, loaded: body.length, total: body.length });
       setProp('readyState', 4); // DONE
       fire('readystatechange');
-      try {
-        if (typeof xhr.onload === 'function') xhr.onload({ type: 'load', target: xhr });
-      } catch (e) {}
       fire('load');
-      try {
-        if (typeof xhr.onloadend === 'function') xhr.onloadend({ type: 'loadend', target: xhr });
-      } catch (e) {}
       fire('loadend');
     }, 0);
   }
@@ -321,9 +353,16 @@
         playinfoValue = v;
       }
     });
+    playinfoHooked = true;
   } catch (e) {}
 
-  /** 只改首屏 SSR 状态里的区域字段（钩子内自包含实现，作用域独立） */
+  /**
+   * 只改首屏 SSR 状态里的区域字段。
+   *
+   * ⚠ 这里是 `src/core/region.js` 的**独立副本**，不是引用 —— 钩子被字符串化注入，
+   *   作用域完全独立，import 不进来。region.js:patchRegion 有同样的警告。
+   *   改字段清单时两边都要改；只改一边不会报错，只会静默不生效。
+   */
   function patchSsRegion(s) {
     var cfg = REGION_CFG[region];
     if (!cfg || region === 'off' || !s || typeof s !== 'object') return;
@@ -356,7 +395,7 @@
         }
       }
       // 区域形态（详见 core/region.js 的诚实边界：这里只改首屏渲染形态）
-      if (region !== 'off') patchSsRegion(s, region);
+      if (region !== 'off') patchSsRegion(s);
     } catch (e) {}
   }
 
@@ -379,8 +418,9 @@
   }
   updateSsHooks();
 
-  /* ---------------- XHR 钩子 ---------------- */
+  /* ---------------- 网络拦截（XHR 与 fetch） ---------------- */
 
+  var origFetch = window.fetch;
   var origOpen = XMLHttpRequest.prototype.open;
   var origSend = XMLHttpRequest.prototype.send;
   var origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
@@ -531,9 +571,6 @@
   }
 
   /* ---------------- fetch 钩子 ---------------- */
-
-  var origFetch = window.fetch;
-
   window.fetch = function (input, init) {
     var self = this;
     var args = arguments;
@@ -631,6 +668,6 @@
 
   /* ---------------- 握手 ---------------- */
 
-  post({ type: 'hello', token: token });
+  post({ type: 'hello', token: token, state: selfState() });
   tryPrefetch();
 })();

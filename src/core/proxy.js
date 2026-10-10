@@ -13,7 +13,7 @@ import { httpRequest, parseJsonSafe } from './transport.js';
 import { ensureMixinKey, getEffectiveCookie, hasCookie, getBCsrf, resolveStrategy } from './session.js';
 import { signUrl, hasWbiSignature } from './wbi.js';
 import { patchJsonText } from './patch.js';
-import { cacheGet, cacheSet, cacheClear, coalesce, cacheInfo } from './cache.js';
+import { cacheGet, cacheSet, cacheClear, cacheGeneration, coalesce, cacheInfo } from './cache.js';
 import { log, stats, setCurrentMedia } from './log.js';
 
 /** 从 B 的响应里把「实际拿到的播放流」提取出来，用于日志与面板实时展示 */
@@ -111,12 +111,15 @@ function injectCsrf(body, csrf) {
     }
   }
   if (/csrf=/.test(s)) return s.replace(/(csrf=)[^&]*/g, '$1' + csrf);
-  return s + (s.includes('?') ? '&' : '') + 'csrf=' + encodeURIComponent(csrf);
+  return (s ? s + (s.endsWith('&') ? '' : '&') : '') + 'csrf=' + encodeURIComponent(csrf);
 }
 
 /**
  * 准备最终的请求：抬高参数 + 注入 csrf + 重签 wbi。
- * @returns {{url:string, body:string, upgraded:boolean, signed:boolean, note?:string}}
+ * @returns {{url:string, body:string, originalBody:string, upgraded:boolean, signed:boolean, note?:string}}
+ *
+ * `originalBody` 是**没有注入 B 的 csrf** 的 body，专门给「参数被拒后退回原始参数重试」用。
+ * 拿不到时为空串（GET 请求）。
  */
 async function prepare(ep, method, rawUrl, rawBody) {
   const url = new URL(rawUrl);
@@ -130,10 +133,15 @@ async function prepare(ep, method, rawUrl, rawBody) {
 
   let body = method === 'POST' && rawBody ? injectCsrf(rawBody, csrf) : '';
 
+  // 重试要用的「没注入过 B 的 csrf」的 body。
+  // 直接拿 rawBody 是不行的：POST 端点被抬高参数时不改 body，
+  // 于是 rawBody === prep.body，退回它等于没退。必须显式分开记。
+  const originalBody = method === 'POST' && rawBody ? rawBody : '';
+
   // wbi 签名：参数动过就必须重签，否则 -403
   const needsSign = ep.wbi === 'required' || (ep.wbi === 'if-present' && hasWbiSignature(url));
   if (!needsSign) {
-    return { url: url.href, body, upgraded: true, signed: false };
+    return { url: url.href, body, originalBody, upgraded: true, signed: false };
   }
 
   const mixinKey = await ensureMixinKey();
@@ -148,16 +156,17 @@ async function prepare(ep, method, rawUrl, rawBody) {
       return {
         url: orig.href,
         body: method === 'POST' && rawBody ? injectCsrf(rawBody, csrf) : '',
+        originalBody,
         upgraded: false,
         signed: false,
         note
       };
     }
-    return { url: url.href, body, upgraded: true, signed: false, note: '缺少 wbi 密钥，参数已抬高但未重签' };
+    return { url: url.href, body, originalBody, upgraded: true, signed: false, note: '缺少 wbi 密钥，参数已抬高但未重签' };
   }
 
   const signed = signUrl(url, mixinKey);
-  return { url: signed.href, body, upgraded: true, signed: true };
+  return { url: signed.href, body, originalBody, upgraded: true, signed: true };
 }
 
 /* ------------------------------------------------------------------ *
@@ -213,6 +222,12 @@ export async function handleProxy(ep, msg) {
     return { passthrough: false, status: cached.status, statusText: 'OK', body: cached.body, headersRaw: cached.headersRaw, cached: true };
   }
 
+  // 记下发起时的借用来源。切号 / 改借用源会 resetCache()，
+  // 但已经在途的请求不受影响 —— 它回来时若还按原样写进缓存，
+  // 就会把上一个账号的播放地址继续供出去最多一个 TTL（默认 120 秒）。
+  // 用代际号比对：缓存被清空过就不写，宁可不缓存也不能供错号的响应。
+  const myGen = cacheGeneration();
+
   const result = await coalesce(key, async () => {
     const prep = await prepare(ep, method, msg.url, msg.body);
     const headers = buildHeaders(msg.headers, method);
@@ -223,7 +238,11 @@ export async function handleProxy(ep, msg) {
     let json = parseJsonSafe(res.text);
     if (res.ok && json && json.code !== 0 && prep.upgraded && RETRY_ON_ORIGINAL.has(json.code)) {
       log.warn(`${ep.id} 参数被拒（code=${json.code}），退回原始参数重试`);
-      res = await sendWithB(method, msg.url, buildHeaders(msg.headers, method), method === 'POST' ? msg.body : '');
+      // 必须连 body 一起退回：POST 端点（/ogv/player/playview、/ogv/player/playurl）是 csrf:true，
+      // prepare() 已把 B 的 bili_jct 写进 prep.body。这里若还用 msg.body，
+      // 等于把 A 的 csrf 配 B 的 SESSDATA 发出去 —— 服务端必然再拒一次，
+      // 重试对最需要它的番剧端点反而永远失败。
+      res = await sendWithB(method, msg.url, buildHeaders(msg.headers, method), prep.originalBody);
       json = parseJsonSafe(res.text);
     }
 
@@ -247,11 +266,15 @@ export async function handleProxy(ep, msg) {
     setCurrentMedia(ep.id, summary, false);
     log.info(
       `代理成功 ${ep.id}${prep.upgraded ? '（已抬高画质参数' + (prep.signed ? '并重签 wbi）' : '）') : '（原始参数）'}` +
-        ` 画质=${summary.quality ?? '-'} 码流=${summary.videoStreams} 条` +
+        ` 画质=${summary.quality ?? '-'} 码流=${summary.videoStreams.length} 条` +
         (prep.note ? ` [${prep.note}]` : '')
     );
 
-    const patched = patchJsonText(res.text, { patchVip: store.isPatchUi(), region: store.getRegion() });
+    const patched = patchJsonText(res.text, {
+      patchVip: store.isPatchUi(),
+      region: store.getRegion(),
+      codec: store.getCodec()
+    });
     return {
       passthrough: false,
       status: res.status,
@@ -262,7 +285,7 @@ export async function handleProxy(ep, msg) {
     };
   });
 
-  if (!result.passthrough && ttl > 0) {
+  if (!result.passthrough && ttl > 0 && myGen === cacheGeneration()) {
     cacheSet(key, { status: result.status, statusText: result.statusText, body: result.body, headersRaw: result.headersRaw, summary: result.summary }, ttl);
   }
   return result;

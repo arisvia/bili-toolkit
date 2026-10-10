@@ -51,7 +51,7 @@ function build() {
 
 /* ---------- 产物校验 ---------- */
 function verifyArtifact() {
-  const out = path.join(ROOT, 'dist/bilibili-vip-proxy.user.js');
+  const out = path.join(ROOT, 'dist/bili-toolkit.user.js');
   if (!fs.existsSync(out)) fail('产物不存在');
 
   const code = fs.readFileSync(out, 'utf8');
@@ -78,11 +78,11 @@ function verifyArtifact() {
 
 /* ---------- 归档 ---------- */
 function archive(code, version) {
-  const dir = path.join(ROOT, 'release');
+  const dir = path.join(ROOT, 'dist');
   fs.mkdirSync(dir, { recursive: true });
   const name = `bili-toolkit-v${version}.user.js`;
   fs.writeFileSync(path.join(dir, name), code, 'utf8');
-  console.log(`\n已打包 → release/${name}`);
+  console.log(`\n已打包 → dist/${name}`);
   console.log('安装：Tampermonkey → 添加新脚本 → 粘贴该文件内容');
 }
 

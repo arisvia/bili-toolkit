@@ -7,6 +7,7 @@
 import { NS, CFG_PLACEHOLDER, HOSTS, DEFAULTS } from '../config.js';
 import { ENDPOINTS, LOCAL_PATCH_PATHS } from './endpoints.js';
 import { store } from './store.js';
+import { hasCookie } from './session.js';
 
 export function buildHookConfig(token) {
   return {
@@ -17,7 +18,7 @@ export function buildHookConfig(token) {
     sandboxEntries: ENDPOINTS.map((ep) => ({ host: ep.host, path: ep.path, method: ep.method })),
     localEntries: LOCAL_PATCH_PATHS.map((p) => ({ host: p.host, path: p.path })),
     timeoutMs: DEFAULTS.timeoutMs,
-    hidePlayinfo: store.isEnabled() && !!store.getCookie(),
+    hidePlayinfo: store.isEnabled() && hasCookie(),
     patchUi: store.isPatchUi(),
     prefetch: store.isPrefetch(),
     region: store.getRegion()
@@ -27,7 +28,7 @@ export function buildHookConfig(token) {
 /** 当前配置（用于 postMessage 推送时的增量更新） */
 export function liveConfig() {
   return {
-    hidePlayinfo: store.isEnabled() && !!store.getCookie(),
+    hidePlayinfo: store.isEnabled() && hasCookie(),
     patchUi: store.isPatchUi(),
     prefetch: store.isPrefetch(),
     region: store.getRegion()

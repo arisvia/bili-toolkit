@@ -78,13 +78,3 @@ export function parseJsonSafe(text) {
     return null;
   }
 }
-
-/** 从响应头字符串里取某个头（大小写不敏感） */
-export function headerValue(headersRaw, name) {
-  const target = name.toLowerCase();
-  for (const line of String(headersRaw || '').split(/\r?\n/)) {
-    const i = line.indexOf(':');
-    if (i > 0 && line.slice(0, i).trim().toLowerCase() === target) return line.slice(i + 1).trim();
-  }
-  return null;
-}

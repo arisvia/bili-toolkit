@@ -73,24 +73,76 @@ export function stripTrialFlags(root) {
   walk(root);
   return root;
 }
+const CODEC_PRIORITY = {
+  auto: [],
+  av1: [13, 12, 7],
+  hevc: [12, 13, 7],
+  avc: [7, 12, 13]
+};
+
+/**
+ * 在保持分辨率档位原始先后顺序的前提下，按用户编码偏好对同一分辨率内的流重排。
+ * auto 或未启用偏好时直接返回原对象，不进行任何修改。
+ */
+export function reorderStreams(root, codecPref = 'auto') {
+  if (!root || typeof root !== 'object') return root;
+  if (!codecPref || codecPref === 'auto') return root;
+  const pri = CODEC_PRIORITY[codecPref];
+  if (!pri || !pri.length) return root;
+
+  const d = root.data;
+  if (!d || typeof d !== 'object') return root;
+  const pu = d.playurl && typeof d.playurl === 'object' ? d.playurl : null;
+  const src = pu || (d.video_info && typeof d.video_info === 'object' ? d.video_info : d);
+  const dash = src && src.dash;
+  if (!dash || !Array.isArray(dash.video)) return root;
+
+  // 按分辨率 id 归类，保留各档位首次出现的先后顺序
+  const groups = new Map();
+  for (const v of dash.video) {
+    if (!v) continue;
+    const q = v.id;
+    let list = groups.get(q);
+    if (!list) {
+      list = [];
+      groups.set(q, list);
+    }
+    list.push(v);
+  }
+
+  const out = [];
+  for (const list of groups.values()) {
+    list.sort((a, b) => {
+      const pA = pri.indexOf(a.codecid);
+      const pB = pri.indexOf(b.codecid);
+      return (pA === -1 ? 99 : pA) - (pB === -1 ? 99 : pB);
+    });
+    out.push(...list);
+  }
+  dash.video = out;
+  return root;
+}
 
 /**
  * 统一的响应补丁入口。
  * @param {string} text 原始 JSON 文本
- * @param {{patchVip?:boolean, stripTrial?:boolean, region?:string}} opts
+ * @param {{patchVip?:boolean, stripTrial?:boolean, region?:string, codec?:string}} opts
  * @returns {string}
  */
 export function patchJsonText(text, opts = {}) {
   const patchVip = opts.patchVip !== undefined ? opts.patchVip : DEFAULTS.patchUi !== false;
   const stripTrial = opts.stripTrial === true;
   const region = opts.region || 'off';
-  if (!patchVip && !stripTrial && region === 'off') return text;
+  const codec = opts.codec || 'auto';
+  // 当所有修改开关均关闭、且编码为默认时，原样返回文本，避免无谓的 parse + stringify 开销
+  if (!patchVip && !stripTrial && region === 'off' && codec === 'auto') return text;
   try {
     const o = JSON.parse(text);
     if (!o || typeof o !== 'object') return text;
     if (patchVip) patchVipFlags(o);
     if (stripTrial) stripTrialFlags(o);
     if (region !== 'off') patchRegion(o, region);
+    if (codec !== 'auto') reorderStreams(o, codec);
     return JSON.stringify(o);
   } catch {
     return text;
@@ -101,11 +153,13 @@ export function patchJsonText(text, opts = {}) {
 export function extractMidFromNav(text) {
   try {
     const o = JSON.parse(text);
-    if (o && o.code === 0 && o.data) return { mid: String(o.data.mid ?? ''), uname: o.data.uname || '' };
+    if (o && o.code === 0 && o.data) {
+      return { mid: String(o.data.mid ?? ''), uname: o.data.uname || '', face: o.data.face || '' };
+    }
   } catch {
     /* ignore */
   }
-  return { mid: '', uname: '' };
+  return { mid: '', uname: '', face: '' };
 }
 
 /** 从 nav 响应里提取会员信息 */

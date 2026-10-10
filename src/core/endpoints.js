@@ -2,8 +2,8 @@
  * 端点表 —— 「哪些请求要处理、怎么处理」的唯一事实源。
  *
  * mode:
- *   'proxy' : 用 B 账号 Cookie 重发，响应直接替换页面的响应
- *   'merge' : A、B 各发一次，只把 B 的「画质/会员」字段合并进 A 的响应（身份仍为 A）
+ *   'proxy' : 用 B 账号 Cookie 重发，响应直接替换页面的响应（**目前唯一实现的模式**）
+ *
  * 沙箱侧只有出现在这张表里的 host + method + path 才允许携带 B 的 Cookie。
  */
 
@@ -95,8 +95,10 @@ export const ENDPOINTS = [
  *   画质清单（accept_quality / support_formats）是在 playurl 响应里的，而那一份我们已经整体换成了 B 的。
  *   所以这里只需要把 vip 形状的字段改掉，避免播放器仅凭本地状态就隐藏高画质入口或弹付费墙。
  *
- *   如果将来出现「画质菜单仍然缺失」的情况，在这里改回 mode:'merge' 并在 proxy.js 的
- *   ACCEPT_FIELDS 里补字段即可 —— 代价是每次播放多一次 HTTP 往返。
+ *   如果将来出现「画质菜单仍然缺失」的情况，**先实测 playurl 响应里到底缺什么字段**
+ *   （node tools/cdn-domains.mjs 旁边那套 request 打点最省事），再决定是本地补字段，
+ *   还是真的需要双发合并。注意：merge 模式**目前没有实现**，
+ *   光改这里没用，得同时在 proxy.js 里写出合并逻辑并放开 build.mjs 的校验。
  */
 export const LOCAL_PATCH_PATHS = [
   { host: 'api.bilibili.com', path: '/x/player/wbi/v2' },

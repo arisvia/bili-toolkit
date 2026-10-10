@@ -1,4 +1,4 @@
-# 实测结论
+﻿# 实测结论
 
 本文只记录**用真实请求/真实数据验证过的事实**，不含设想与计划。
 
@@ -8,9 +8,12 @@
 |---|---|---|
 | `npm run verify:online` | 否 | §1 §2 §4 §5 §6 §7 |
 | `npm run verify:local` | 是（仅本机，输出脱敏） | §3 §5 |
-| `npm test` | 否 | §8 §9 |
+| `npm test` | 否 | §8 §9 §12 §13 §15 §16 §17 §18 |
+| `npm run verify:cookie` | 是（仅本机） | §16 |
+| `node tools/player-keys.mjs` | 否 | §20 |
+| `npm run harness` | 否 | §14 |
 
-最近一次全量复验：**2026-10-09**
+最近一次全量复验：**2026-10-10**
 
 ---
 
@@ -78,14 +81,26 @@ Q2 是关键：只换 Cookie 不抬 `qn`，画质完全不变。这就是「借�
 
 ## §4 `accept_quality` / `support_formats` 不能用来判断账号权益
 
-**结论**：这两个字段是**固定的完整档位表**，与账号无关。
+**结论**：这两个字段**与账号无关**，B 大会员和匿名拿到的完全一样。
+
+但它**不是**「固定的完整档位表」—— 这一点原来写错了，2026-10-10 实测纠正。
+它是**每部片子自己的档位表**，逐片不同：
 
 ```
-匿名 accept_quality  = [120,112,80,64,32,16]   ← 匿名也给 120
-匿名 support_formats = [120,112,80,64,32,16]
-匿名 dash.video 最大流 = 32 (480P)               ← 但 4K 根本不存在
-大会员 accept_quality = [120,112,80,64,32,16]   ← 与匿名完全相同
+片号            B                        匿名                     dash 最大流 B/匿名
+BV1PTHS6MEC5    [120,112,80,64,32,16]    [120,112,80,64,32,16]    120 / 32
+BV1hxHR68E24    [116,80,64,32,16]        [116,80,64,32,16]        116 / 32
+BV1Xdps6nEhe    [120,116,80,64,32,16]    [120,116,80,64,32,16]    120 / 32
 ```
+
+**另一个反直觉的点**：响应的 `quality` 与 `accept_quality` 的最大值**不相等**。
+匿名 qn=127 时实测 `quality=64`，而清单里写着 116 —— 两者对不上。
+所以也不能拿 `quality` 去反推清单、拿清单去反推 `quality`；
+唯一可靠的读法是 `dash.video[].id` 的最大值，也就是响应里**真实存在的流**。
+
+**为什么这个区别有实际后果**：正因为它随片子变，它恰好就是面板该显示的东西 ——
+「这部片子提供哪些档」，配上响应的 `quality`（实际拿到了哪档），
+用户一眼能看出借用是否生效。面板「可选档位」用的就是这个字段，实现是对的。
 
 **影响**：会员状态只能读 **nav 的 `data.vipStatus`**（`patch.js` 的 `extractVipFromNav()`）。
 若哪天看到有人用 `accept_quality.includes(120)` 判断大会员，那是错的。
@@ -100,8 +115,9 @@ Q2 是关键：只换 Cookie 不抬 `qn`，画质完全不变。这就是「借�
 画质清单只存在于 playurl 响应。
 
 **影响**：`v2` 因此走本地伪装（改写会员字段）、**不走代理**，省掉一次 HTTP 往返。
-若将来发现画质菜单不完整，把 `endpoints.js` 里 `LOCAL_PATCH_PATHS` 的 `v2`
-改回 `mode: 'merge'` 即可（该处有注释说明）。
+若将来发现画质菜单不完整，先复验 `v2` 的 `accept_*` 是否真的出现（`verify:local` 第 [5] 段），
+再决定是本地补字段还是纳入代理。注意 `mode: 'merge'` **从未实现**，
+`build.mjs` 现在会直接拒绝它 —— 别照着旧结论去改。
 
 **复验**：`npm run verify:online` 第 [6] 段（匿名）；`npm run verify:local` 第 [5] 段（登录态）。
 
@@ -129,13 +145,41 @@ cn / cn_c / oversea / hk / tw / mo / intl / oversea_cn / intl_hk
 
 ---
 
-## §7 `SESSDATA` 是 HttpOnly
+## §7 `SESSDATA` 能不能用 `document.cookie` 读到 —— **结论作废，改为运行时探测**
 
-**结论**：`document.cookie` 取不到 `SESSDATA`。
+**原结论（已作废）**：「`SESSDATA` 是 HttpOnly，`document.cookie` 取不到」。
 
-**影响**：这是 userscript 的硬边界。Cookie 只能由用户从 DevTools 的
-Application/Storage 面板手动复制，**没有脚本侧的替代方案**。
-面板里的粘贴解析流程就是为这件事设计的。
+**为什么作废**：这条从来没有被真实浏览器验证过。当时唯一的"证据"是
+`test/fixtures/harness.html` 里的 mock：
+
+```js
+document: { cookie: 'buvid3=a-dev3; DedeUserID=111; bili_jct=a-csrf' }  // 没有 SESSDATA
+```
+
+而这个 mock 本身就是照着结论写的 —— 然后 `test/accounts.test.mjs` 又断言
+`document.cookie` 里没有 `SESSDATA`。**拿自己的 mock 验证自己的假设，循环论证。**
+用户实测在控制台能看到 `SESSDATA`，说明该结论至少不是普遍成立的。
+
+**现在的做法：不写死，运行时探测**。
+
+`session.js` 的 `readBrowserCookie()` 当场读 `document.cookie`，
+面板据此走三条不同的路（`switcher.js` 的 `overviewAsync()`）：
+
+| 探测结果 | 界面 |
+|---|---|
+| 当前号已在池中 | 给「用它借用」，凭证现成 |
+| 不在池中且**读得到** `SESSDATA` | 给「一键加入池子」 |
+| 不在池中且**读不到** | 提示从 DevTools 复制 |
+
+**影响**：自动导入从「不可能」变成「取决于环境」。凡是以前写着
+「SESSDATA 是 HttpOnly 所以读不到」的推断，现在都改成运行时判断。
+
+**复验**：把 `tools/cookie-readability-check.js` 粘进 B 站页面控制台执行，
+它会打印 `docHasSess` / `docNames` 等字段（只列名字不含值）。
+`npm test` 覆盖三种分支（`test/accounts.test.mjs` 第 [14] 组）。
+
+**仍然成立的部分**：`GM_cookie.list()` 读 HttpOnly 这条是 Tampermonkey 官方文档
+明写的（仅 beta 版本支持），见 §12。
 
 ---
 
@@ -184,12 +228,287 @@ Name ⇥ Value ⇥ Domain ⇥ Path ⇥ Expires ⇥ Size ⇥ HTTPOnly ⇥ Secure 
 
 ---
 
+## §16 设备字段不必存：实测消融 + 它们属于浏览器而非账号
+
+**结论**：把 B 账号的 Cookie 逐个字段删掉再请求 playurl，**除 `SESSDATA` 外全部无影响**。
+
+```
+删 SESSDATA        → 画质 120/4K 降为 64/720P   ← 唯一必需
+删 bili_jct        · 无影响
+删 DedeUserID      · 无影响
+删 buvid3/buvid4   · 无影响
+删 bili_ticket     · 无影响
+删 _uuid/b_nut/…   · 无影响
+
+SESSDATA 单独                      → quality=120/4K，dash 最大流 120/4K
+SESSDATA + DedeUserID + bili_jct   → quality=120/4K（与上面完全一致）
+```
+
+**所以账号池里只存身份字段**：
+
+| 存 | 用途 |
+|---|---|
+| `SESSDATA` | 登录态，唯一必需 |
+| `DedeUserID` / `DedeUserID__ckMd5` | 切号后前端认人 |
+| `sid` | 与 SESSDATA 成对，切号必须整组换（§13） |
+| `bili_jct` | 番剧 OGV 的 csrf |
+
+**不存**：`buvid3` / `buvid4` / `bili_ticket` / `bili_ticket_expires` / `buvid_fp` /
+`b_nut` / `b_lsid` / `_uuid`。
+
+两条独立理由，缺一不可：
+
+1. **实测无用** —— 见上。
+2. **它们属于浏览器这台设备，不属于任何账号** —— 存进池子只会在切号时被
+   `staleKeysFor()` 算成「旧号残留」删掉，反而破坏浏览器自己的设备指纹。
+   **这个 bug 真实发生过**：白名单最初把 `buvid*` 也列了进去，
+   而池子里存的是最小字段集，于是每次切号都在删设备字段。
+
+所以 `config.js` 的 `IDENTITY_COOKIE_KEYS` 只含 5 个身份字段，
+设备字段**既不写也不删**，由站点自己刷新。借用路径上确实缺设备字段也不要紧 ——
+`cookie.js` 的 `backfillDeviceCookies()` 会从当前页面的 `document.cookie`
+取同名值补上，同一台设备混用是安全的。
+
+**`bili_jct` 无法从 `SESSDATA` 推导**：试过 5 种已知公式
+（`md5(md5(K+s)+K)` 等）全部与真实值不匹配，只能从 DevTools 一起复制。
+
+**注意**：消融只覆盖普通视频的 playurl（GET）。番剧 playview 是 POST + csrf，
+`bili_jct` 的作用要在那里才测得到 —— 所以「无影响」只适用于普通视频。
+
+**复验**：`npm run verify:cookie`（逐字段消融 + 最小集对照）。
+
+---
+
+## §17 「知道当前是谁」与「能不能拿到它的 Cookie」是两件事
+
+**结论**：前者一定能做到，后者**取决于环境** —— 所以要运行时探测，不能写死。
+
+| 能力 | 怎么做的 |
+|---|---|
+| 知道当前登录的是谁 | 用**浏览器自身 Cookie** 请求 `/x/web-interface/nav`，返回 `data.mid` / `uname` / `vipStatus` |
+| 拿到当前账号的 Cookie | `document.cookie` —— **因环境而异**，见 §7 |
+
+**易混点**：`GM_xmlhttpRequest` 能**用**浏览器的 Cookie 发请求，但那不等于能**读到**它。
+`probeIdentity()` 里的「对照组」正是靠前者拿到浏览器身份的，不是靠后者。
+
+**影响**：面板据此分三条路 —— `overviewAsync()` 返回
+`inPool`（凭证现成）/ `canAutoImport`（读得到，给「一键加入池子」）/
+`needsManualCopy`（读不到，如实提示去 DevTools）。
+nav 失败或读不到时静默降级，不阻塞面板。
+
+**注意**：`importBrowserAccount()` 读不到 SESSDATA 时返回 `needManualCopy`，
+**绝不用别的东西凑一个假 Cookie** —— 比如拿浏览器的 device 字段拼个空壳，
+那会在切号时把用户直接踢下线。
+
+**复验**：`npm test`（`test/accounts.test.mjs` 第 [14] 组，三条分支都覆盖）。
+
+---
+
+## §18 重复添加同一账号是去重，不是新增
+
+**结论**：账号 id = `SESSDATA` 的 FNV 哈希，所以同一个号粘贴多少次都只有一条。
+
+```
+第一次  → isNew=true，  池内 1 条
+第二次  → isNew=false， 池内 1 条，id 相同
+```
+
+保留：用户起的 `label`、`addedAt`、没变时的探测结论。
+替换：`cookie` 本身。
+
+**换了 Cookie 内容就要连探测结论一起作废**（`vipStatus` / `vipType` / `checkedAt`）：
+
+只清 `checkedAt` 而留着 `vipStatus` 会造成假象 ——
+把一份已失效的 Cookie 粘到已有的会员号上、探测失败，
+面板却继续显示「大会员」。**这个 bug 真实发生过。**
+
+**复验**：`npm test`（`test/accounts.test.mjs` 第 [13] 组）。
+
+---
+
+## §19 视频字节不在 `api.bilibili.com`，按域名分流就够
+
+**结论**：`playurl` 响应只是 JSON，里面的 `dash.video[].baseUrl` 才指向真正的 CDN。
+所以「代理 api 域名」和「代理视频流量」是两件毫不相干的事。
+
+实测（`node tools/cdn-domains.mjs`，国内普通视频）：
+
+```
+quality=116，dash 最大流=116
+响应引用 38 个主机名，归并后只有 3 条规则：
+  18 × bilivideo.cn      （*.mcdn.bilivideo.cn）
+  14 × mountaintoys.cn   （b-* / *-edge.mountaintoys.cn，逐个随机）
+   6 × bilivideo.com     （upos-sz-* / cn-gddg-ct-*）
+```
+
+**一条境外域名都没有。**
+
+**影响：分区规则很简单**
+
+| 域名 | 走不走代理 | 理由 |
+|---|---|---|
+| `api.bilibili.com` | **走** | 区域判定发生在这里（`rights.area_limit`、以及「给你哪套 CDN」都是这个响应决定的） |
+| `api.live.bilibili.com` | **走** | 同理；只有想看港澳台直播才需要 |
+| `www.bilibili.com` | 走 | 首屏 SSR 决定页面是不是直接给「地区限制」提示，代理后 UI 才一致；**不是解锁的必要条件** |
+| `*.bilivideo.com` / `*.bilivideo.cn` / `*.mountaintoys.cn` | **不走** | 视频字节本体。代理 = 搬几百 MB = 卡 |
+
+代理 `api.bilibili.com` 的代价是每部片几十 KB 的 JSON 和一次往返延迟；
+媒体仍由播放器直连 CDN。**「全部代理会卡」的担心，在按域名分流的前提下不成立。**
+
+**例外（别忽略）**：港澳台**独占**内容境内 CDN 根本没有那份资源，
+服务端会返回 `upos-hz-mirrorakam.akamaized.net`。这时不代理 CDN 就没得看，
+代理了就慢 —— 这是物理限制，不是配置能解决的。
+（此条来自 bilimiao2 的文档，未在本仓库实测。）
+
+**复验**：`node tools/cdn-domains.mjs`（需要 B 账号凭证，输出只含域名）。
+
+---
+
+## §20 播放器的画质开关：哪些 key 是真的
+
+**结论**：网上流传的「强制 HDR/8K」脚本里有一批 key 是**虚构的**，
+另有一条用 `navigator.userAgent` 冒充 Safari 的做法，是有官方替代的、且有风险的做法。
+
+实测（`node tools/player-keys.mjs`，搜 `core.ba67b466.js` 原文）：
+
+| key | 是否存在 | 原文语义 |
+|---|---|---|
+| `bilibili_player_force_hdr` | **存在** | `checkDisplayHDRCapability` 里 `parseInt(...)` 与 `matchMedia('(dynamic-range: high)')` 取或 |
+| `bilibili_player_force_8k` | **存在** | `if (parseInt(getLocalStorage("bilibili_player_force_8k"),10)) return true;` |
+| `enableHEVCError` | **存在** | `"1" !== getSessionStorage("enableHEVCError") && MediaSource.isTypeSupported(HEVC)` |
+| `bilibili_player_force_DolbyAtmos&8K&HDR` | **不存在** | 网上脚本编的，写进 localStorage 什么也不会发生 |
+
+**8K 的浏览器门就是要冒充 Safari 的原因**：
+
+```js
+if (!checkVideoCapabilitySync({codec,width,height}).supported) return false;   // 硬件能力探测
+if (parseInt(getLocalStorage("bilibili_player_force_8k"),10)) return true;      // ← 官方短路
+// 下面才是按浏览器类型/版本判断：Safari>=13 / ChromiumEdge>=120 / …
+```
+
+所以 `_force_8k` **就是** UA 骗术的正解，不需要冒充。
+
+**三条边界**：
+
+1. `_force_hdr` 只拆掉**显示能力**那一道门，`checkVideoCapabilitySync` 的硬件探测仍在。
+   开了也不会让没有 HDR 能力的显示器硬出 HDR —— 它只影响播放器的**判定**，不影响屏幕。
+2. `enableHEVCError` 屏蔽后播放器**永远认为 HEVC 可用**。
+   真解码不了的机器会从「降级到 AVC 播放」变成「放不出来」。
+   有效但有真实代价，不能无条件开。
+3. 冒充 Safari 的代价是**真的**：播放器的 Safari 分支围绕 HLS/m3u8 构建，
+   而本项目的代理发的是 DASH 响应（`otype=json`）。
+   让播放器走 Safari 代码路径 = 去要一个我们没提供的流。
+   这类改动的失败模式是「视频彻底放不出来」，是这个脚本最不能犯的错。
+
+**因此**：以上三项**当前均未加入**，理由是它们解决的是「播放器要不要展示这些档」，
+而实测（§4、§3）表明决定权在**服务端返回的 dash 里有没有对应的流**。
+等真的遇到「流在响应里但播放器不给选」时，再按上面的边界逐条评估。
+
+**复验**：`node tools/player-keys.mjs`（不需要凭证）。
+
+---
+
 ## §11 观察但未稳定复现
 
 - 携带 `buvid3` / `bili_ticket` 等风控字段与不携带，常规测试下**响应无差异**。
   但历史上观察到过 `-412`。未能稳定构造复现条件，因此**不下结论**。
   保守做法仍是保留这些字段。
 - 逐字段消融显示：只有 `SESSDATA` 影响 playurl；`bili_jct` 是番剧 OGV POST 的必需项。
-  **`sid` 绝不能跨账号混用**（多账号改造时尤其注意）。
+  **`sid` 绝不能跨账号混用**（多账号改造时尤其注意，详见 §13）。
 
 **复验**：`npm run verify:cookie`（逐字段消融）。
+
+---
+
+## §12 一键切号靠管理器写 Cookie，`document.cookie` 写不了 HttpOnly
+
+**结论**：用户脚本改不了浏览器登录态里的 `SESSDATA`，但**可以**通过管理器 API 写入。
+
+```
+document.cookie = 'SESSDATA=...'  → 被 HttpOnly 规则拒绝（写入也无效）
+GM.cookie.set({name, value, httpOnly:true})  → 可以
+```
+
+能力是分层的，缺一层就少一项能力，**如实降级而不是假装成功**：
+
+| 可用 API | 能覆盖写 | 能删除 |
+|---|---|---|
+| `GM.cookie.set/delete` | ✔ | ✔ |
+| 仅 `GM_setCookie` | ✔ | ✔（用过期时间写） |
+| 都没有 | ✘ | ✘ |
+
+**影响**：`switcher.js` 在两种 API 都没有时返回 `unsupported`，面板把「切到此号」
+置灰并说明原因，只保留「用它借用」——后者不需要任何 Cookie 写权限。
+
+**注意**：`GM.cookie.list()` 文档明确写着 **HttpOnly 只在 beta 版本可读**。
+所以「浏览器实际登录的是谁」这个信息可能读不到，读不到就不显示，
+**不能靠它做任何必需功能**（`overviewAsync()` 里读不到时静默降级）。
+
+**复验**：`npm test`（`test/accounts.test.mjs` 第 [10] [12] 组）。
+
+---
+
+## §13 切号必须整组换字段
+
+**结论**：只写 `SESSDATA` 会得到「B 的登录态 + A 的 csrf」，
+表现为**番剧 OGV 静默失败**（接口返回 code=0 但没有视频，不报错）。
+
+必须同一账号、一起换的字段：
+
+```
+SESSDATA / bili_jct / sid / DedeUserID(+__ckMd5)
+```
+
+- `sid` 与 `SESSDATA` 成对的服务端会话，跨账号沿用必然出错（呼应 §11 的消融结论）
+- `bili_jct` 是番剧 playview POST 的 csrf，与 SESSDATA 同源
+- `DedeUserID` 不换的话前端仍按旧号渲染头像与昵称
+
+**还要删**：目标账号没有、而浏览器里有的字段必须显式删除，否则旧字段继续生效。
+删除名单必须在**切换前**算（用池内记录的旧账号 Cookie，它就是上次写进去的那份），
+切换后再问就只会拿到新值，差集恒为空。
+
+**HttpOnly 属性要跟着走**：`SESSDATA` / `bili_jct` / `sid` 在站点上本来就是 HttpOnly，
+写成非 HttpOnly 等于凭空把登录态暴露给页面 JS。
+反之 `DedeUserID` / `buvid*` 在站点上本来不是，误加 HttpOnly 会让依赖
+`document.cookie` 的页面代码读不到。
+
+**复验**：`npm test`（`test/accounts.test.mjs` 第 [10] 组逐字段断言）。
+
+---
+
+## §14 切号后必须刷新页面
+
+**结论**：首屏 SSR 里嵌着旧身份 —— `__INITIAL_STATE__.user` 与 `__playinfo__`
+都是服务端按登录态渲染的。
+
+**影响**：不刷新的话界面仍显示旧号，且播放器会先按旧数据播一次再纠正，
+表现为「切号后要切一次画质才对」。所以 `switchLoginTo()` 返回 `needReload`，
+面板与菜单都在成功后 1.2s 刷新。
+
+**复验**：`npm run harness`（切号后断言触发了刷新）。
+
+---
+
+## §15 借用来源与当前身份是两个独立概念
+
+**结论**：把两者绑死的话，切到无权益号就立刻没有画质 —— 那正是多账号要解决的事。
+
+```
+activeId  浏览器当前登录的是谁（一键切号改的就是它）
+borrowId  显式指定的借用来源；null = 自动
+自动解析   激活号有大会员就用它，没有就从池里挑一个有大会员的
+```
+
+自动挑选的三条规则（`accounts.js` 的 `resolveBorrow`）：
+
+1. 显式指定了 `borrowId` → 用它
+2. 当前号 `vipStatus === 1` → 用自己
+3. 否则从池里找第一个 `vipStatus === 1` 的
+
+**都没有大会员时退回自己**并说明原因，**绝不瞎挑一个** ——
+未探测过的号（`checkedAt === 0`）不算「确认没有会员」，但也不会被当成借用源。
+
+**探测缓存 24h**：nav 是按账号计的请求，池里 N 个账号就是 N 次往返，
+而会员状态一天之内几乎不变。
+
+**复验**：`npm test`（`test/accounts.test.mjs` 第 [3]–[6] 组）。

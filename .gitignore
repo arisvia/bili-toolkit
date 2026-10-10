@@ -4,7 +4,6 @@ node_modules/
 
 # 构建产物 —— 由 npm run build / release 生成，不入库
 dist/
-release/
 
 # 日志与编辑器
 *.log
@@ -24,5 +23,6 @@ credentials/
 *-cookie.txt
 .env
 .env.*
-# ��ʱ�ļ�
+# 临时文件
 .commit-msg.tmp
+.code-review-graph/

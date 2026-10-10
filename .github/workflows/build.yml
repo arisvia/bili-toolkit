@@ -3,6 +3,7 @@ name: build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -28,6 +29,8 @@ jobs:
 
       - name: 单元测试
         run: npm test
+      - name: 色彩对比度检查
+        run: npm run check:contrast
 
       # 打真实 B 站 API，确认签名与端点契约没有漂移。
       # 只读公开接口，不携带任何 Cookie。
@@ -44,9 +47,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bili-toolkit-node${{ matrix.node }}
-          path: |
-            dist/bilibili-vip-proxy.user.js
-            release/*.user.js
+          path: dist/*.user.js
           if-no-files-found: error
 
   release:
@@ -72,5 +73,5 @@ jobs:
       - name: 发布到 Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*.user.js
+          files: dist/*.user.js
           generate_release_notes: true

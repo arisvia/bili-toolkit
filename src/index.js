@@ -12,9 +12,11 @@ import { setToken, startBus, pushConfig, getToken } from './core/bus.js';
 import { injectHook, liveConfig } from './core/inject.js';
 import { store } from './core/store.js';
 import { setDebug, log } from './core/log.js';
+import { TEXT } from './core/text.js';
 import { mountPanel, refreshPanel } from './ui/panel.js';
 import { registerMenus } from './ui/menu.js';
-import { cookieProblem, ensureMixinKey } from './core/session.js';
+import { cookieProblem, ensureMixinKey, hasCookie } from './core/session.js';
+import { pool, resolveBorrow } from './core/accounts.js';
 
 function randomToken() {
   const buf = new Uint32Array(4);
@@ -35,16 +37,18 @@ function boot() {
 
   startBus(() => liveConfig(getToken()));
   injectHook(hookSource, token, (ok) => {
-    if (!ok) log.warn('钩子注入失败（documentElement 迟迟不可用）');
+    if (!ok) log.warn(TEXT.startup.hookFailed);
     else pushConfig(liveConfig(token));
     refreshPanel();
   });
 
   // 提前把 wbi 密钥拉好。原来是懒加载（等第一次要签名时才去取），
   // 而播放器的首个 playurl 往往几十毫秒内就到，必然赶不上 → 第一次永远退回原始参数。
-  if (store.isEnabled() && store.getCookie()) {
+  // 读一次池子，顺带完成旧版单账号数据的迁移。
+  pool();
+  if (store.isEnabled() && hasCookie()) {
     ensureMixinKey().then((k) => {
-      if (!k) log.warn('未能获取 wbi 密钥，画质参数将不会升级。可在面板诊断区点「重探签名密钥」重试。');
+      if (!k) log.warn(TEXT.startup.noMixinKey);
       else refreshPanel();
     });
   }
@@ -52,12 +56,22 @@ function boot() {
   mountPanel();
   registerMenus();
 
-  // 没有 Cookie 时给一次性提示，避免用户对着「画质没变」发呆
-  if (store.isEnabled() && !store.getCookie()) {
-    setTimeout(() => log.warn('尚未设置 B 账号 Cookie，点左下角圆点打开面板。'), 1500);
+  // 没有可用账号时给一次性提示，避免用户对着「画质没变」发呆
+  if (store.isEnabled() && !hasCookie()) {
+    setTimeout(() => log.warn(TEXT.startup.poolEmpty), 1500);
   } else if (store.isEnabled()) {
     const problem = cookieProblem();
-    if (problem) setTimeout(() => log.warn('B 账号 Cookie 有问题：' + problem), 1500);
+    if (problem) setTimeout(() => log.warn(TEXT.startup.cookieProblem + problem), 1500);
+    else {
+      // 借用源与当前身份不一致时主动说明，否则用户会以为会员失效了
+      const b = resolveBorrow();
+      if (b.mode === 'auto' && b.account) {
+        setTimeout(
+          () => log.info(TEXT.startup.autoBorrow, b.account.uname || b.account.mid, TEXT.startup.autoBorrowTail),
+          1500
+        );
+      }
+    }
   }
 }
 

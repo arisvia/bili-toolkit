@@ -18,6 +18,15 @@ const res = await esbuild.build({
 const M = await import('data:text/javascript;base64,' + Buffer.from(res.outputFiles[0].text, 'utf8').toString('base64'));
 const { parseCookieText, pickFields, joinCookie, sortFields, tierOf } = M;
 
+/** 打包并以 data: URL 加载单个模块（避开相对 import 与浏览器 API） */
+async function load(rel) {
+  const r = await esbuild.build({
+    entryPoints: [path.join(ROOT, rel)],
+    bundle: true, format: 'esm', write: false, platform: 'neutral', target: 'es2022', logLevel: 'silent'
+  });
+  return import('data:text/javascript;base64,' + Buffer.from(r.outputFiles[0].text, 'utf8').toString('base64'));
+}
+
 console.log('\n[1] DevTools 12 列 TSV');
 {
   // 复刻真实结构：Name⇥Value⇥Domain⇥Path⇥Expires⇥Size⇥HTTPOnly⇥Secure⇥SameSite⇥Priority⇥PartitionKey
@@ -70,13 +79,15 @@ console.log('\n[4] 预设挑选');
     sid: '5', bmg_af_sc: '6', rpdid: '7'
   };
   const min = pickFields(fields, 'min');
-  const rec = pickFields(fields, 'recommended');
+  const ess = pickFields(fields, 'essential');
   const all = pickFields(fields, 'all');
   check('min 只含 SESSDATA + bili_jct', min.length === 2 && min.includes('SESSDATA') && min.includes('bili_jct'), min);
-  check('recommended 含防风控字段', rec.includes('buvid3') && rec.includes('DedeUserID'), rec);
-  check('recommended 不含 bmg_af_sc', !rec.includes('bmg_af_sc'));
-  check('all 剔除 sid', !all.includes('sid'), all);
-  check('all 保留其它全部', all.includes('bmg_af_sc') && all.includes('rpdid'));
+  // 默认集是「借用 + 切号都够」：身份字段全留，设备字段全不留
+  check('essential 含全部身份字段', ['SESSDATA', 'bili_jct', 'DedeUserID', 'sid'].every((k) => ess.includes(k)), ess);
+  check('essential 不含设备字段（实测无影响，且切号时不该动）', !ess.includes('buvid3'), ess);
+  check('essential 不含无关字段', !ess.includes('bmg_af_sc') && !ess.includes('rpdid'), ess);
+  check('sid 是身份字段不是「别混用」', ess.includes('sid'), ess);
+  check('all 保留全部（含设备字段，给保守派用）', all.length === Object.keys(fields).length, all);
   check('min 缺 bili-jct 变体也算', pickFields({ SESSDATA: '1', 'bili-jct': '2' }, 'min').length === 2);
 
   const out = joinCookie(fields, min);
@@ -84,12 +95,34 @@ console.log('\n[4] 预设挑选');
   check('joinCookie 跳过不存在的键', joinCookie({ SESSDATA: '1' }, ['SESSDATA', 'nope']) === 'SESSDATA=1');
 }
 
+console.log('\n[4b] 设备字段分级与切号白名单');
+{
+  // 实测依据：npm run verify:cookie 逐字段消融，删掉除 SESSDATA 外的字段响应无变化
+  const deviceKeys = ['buvid3', 'buvid4', 'bili_ticket', 'bili_ticket_expires', 'buvid_fp', 'b_nut', 'b_lsid', '_uuid'];
+  for (const k of deviceKeys) {
+    check(`${k} 归为「浏览器自带」`, tierOf(k).tier === 'auto', tierOf(k));
+  }
+  for (const k of ['SESSDATA', 'bili_jct', 'DedeUserID', 'DedeUserID__ckMd5', 'sid']) {
+    check(`${k} 不归为设备字段`, tierOf(k).tier !== 'auto', tierOf(k));
+  }
+  // 切号白名单里绝不能出现设备字段：否则每次切号都会把它们当「旧号残留」删掉，
+  // 破坏浏览器自己的设备指纹（这个 bug 真实发生过）
+  const { IDENTITY_COOKIE_KEYS, HTTP_ONLY_COOKIE_KEYS } = await load('src/config.js');
+  check('切号白名单不含任何设备字段', !IDENTITY_COOKIE_KEYS.some((k) => deviceKeys.includes(k)), IDENTITY_COOKIE_KEYS);
+  check('切号白名单只含身份字段', IDENTITY_COOKIE_KEYS.join() === 'SESSDATA,bili_jct,DedeUserID,DedeUserID__ckMd5,sid', IDENTITY_COOKIE_KEYS);
+  // 默认字符串排序：大写在小写前，所以 SESSDATA 排第一
+  check('HttpOnly 标记只给站点上本就是 HttpOnly 的三个', [...HTTP_ONLY_COOKIE_KEYS].sort().join() === 'SESSDATA,bili_jct,sid', [...HTTP_ONLY_COOKIE_KEYS]);
+  check('DedeUserID 不标 HttpOnly（站点上本来就不是）', !HTTP_ONLY_COOKIE_KEYS.has('DedeUserID'));
+}
+
 console.log('\n[5] 排序');
 {
-  const sorted = sortFields(['rpdid', 'bili_jct', 'buvid3', 'SESSDATA', 'sid']);
+  const sorted = sortFields(['rpdid', 'buvid3', 'sid', 'bili_jct', 'SESSDATA', 'DedeUserID']);
   check('必需排最前', sorted[0] === 'SESSDATA', sorted);
-  check('番剧/别混用 紧随其后', sorted[1] === 'bili_jct' || sorted[1] === 'sid', sorted);
-  check('可选排最后', sorted[sorted.length - 1] === 'rpdid', sorted);
+  check('番剧紧随其后', sorted[1] === 'bili_jct', sorted);
+  check('身份字段（切号用）排在设备字段之前', sorted.indexOf('DedeUserID') < sorted.indexOf('buvid3'), sorted);
+  check('设备字段排在无关字段之前', sorted.indexOf('buvid3') < sorted.indexOf('rpdid'), sorted);
+  check('无关字段排最后', sorted[sorted.length - 1] === 'rpdid', sorted);
 }
 
 console.log('\n[6] 空输入不炸');

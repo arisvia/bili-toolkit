@@ -11,30 +11,44 @@
  * 因此「从 DevTools 面板复制」是唯一可行的取用方式，没有捷径可绕。
  */
 
-/** 字段分级 —— 全项目唯一事实源，校验器与面板都读这里。 */
+/**
+ * 字段分级 —— 全项目唯一事实源，校验器与面板都读这里。
+ *
+ * `auto` 那一档是这次改造的结论：设备与反爬字段**不用存**。
+ * 实测（`npm run verify:cookie`，逐字段消融）把它们逐个删掉，
+ * playurl 响应毫无变化，`SESSDATA` 单独就能拿到 120/4K。
+ * 而它们属于**浏览器这台设备**，不属于任何账号 ——
+ * 存进池子只会在切号时被当成「旧号残留」删掉，反而破坏设备指纹。
+ * 借用时若确实需要，`cookie.js` 会从页面 document.cookie 补齐。
+ */
 export const TIERS = {
   SESSDATA: { tier: 'required', label: '必需' },
   bili_jct: { tier: 'ogv', label: '番剧必需' },
   'bili-jct': { tier: 'ogv', label: '番剧必需' },
-  DedeUserID: { tier: 'recommended', label: '建议' },
-  buvid3: { tier: 'recommended', label: '防-412' },
-  buvid4: { tier: 'recommended', label: '防-412' },
-  bili_ticket: { tier: 'recommended', label: '反爬' },
-  bili_ticket_expires: { tier: 'recommended', label: '反爬' },
-  buvid_fp: { tier: 'recommended', label: '设备' },
-  b_nut: { tier: 'recommended', label: '设备' },
-  b_lsid: { tier: 'recommended', label: '设备' },
-  _uuid: { tier: 'recommended', label: '设备' },
-  sid: { tier: 'never', label: '别混用' }
+  DedeUserID: { tier: 'identity', label: '切号必需' },
+  DedeUserID__ckMd5: { tier: 'identity', label: '切号必需' },
+  sid: { tier: 'identity', label: '切号必需' },
+  buvid3: { tier: 'auto', label: '浏览器自带' },
+  buvid4: { tier: 'auto', label: '浏览器自带' },
+  bili_ticket: { tier: 'auto', label: '浏览器自带' },
+  bili_ticket_expires: { tier: 'auto', label: '浏览器自带' },
+  buvid_fp: { tier: 'auto', label: '浏览器自带' },
+  b_nut: { tier: 'auto', label: '浏览器自带' },
+  b_lsid: { tier: 'auto', label: '浏览器自带' },
+  _uuid: { tier: 'auto', label: '浏览器自带' }
 };
 
-const RECOMMENDED = [
-  'SESSDATA', 'DedeUserID', 'bili_jct', 'bili-jct', 'buvid3', 'buvid4',
-  'bili_ticket', 'bili_ticket_expires', 'buvid_fp', 'b_nut', 'b_lsid', '_uuid'
-];
+/** 身份字段：借用与切号都用得到，默认全选 */
+const IDENTITY_FIELDS = ['SESSDATA', 'DedeUserID', 'DedeUserID__ckMd5', 'bili_jct', 'bili-jct', 'sid'];
 
-/** 最小的必需集：登录态 + 番剧 csrf */
+/** 最小集：只够借用（番剧要 csrf） */
 export const MINIMAL = ['SESSDATA', 'bili_jct', 'bili-jct'];
+
+/**
+ * 默认集：借用 + 切号都够用的最小完整集。
+ * 比身份字段少的就是那几个设备字段 —— 它们由浏览器自己提供。
+ */
+export const ESSENTIAL = IDENTITY_FIELDS;
 
 export function tierOf(name) {
   return TIERS[name] || { tier: 'optional', label: '可选' };
@@ -127,16 +141,23 @@ export function parseCookieText(raw) {
   return { fields, format: '无法识别' };
 }
 
-/** 按预设挑字段：min | recommended | all（all 会剔除 sid） */
+/**
+ * 按预设挑字段。
+ *
+ * 预设从三个减到两个，因为「推荐」与「全部」的区别在实测之后已经没有了：
+ * 设备字段对接口毫无影响，切号时也不该写它们。
+ *   essential  默认：SESSDATA + 身份字段，借用与切号都够
+ *   all        全部保留（包括设备字段）—— 只在担心风控时才需要
+ */
 export function pickFields(fields, preset) {
   const keys = Object.keys(fields);
   if (preset === 'min') return keys.filter((k) => MINIMAL.includes(k));
-  if (preset === 'recommended') return keys.filter((k) => RECOMMENDED.includes(k));
-  return keys.filter((k) => k !== 'sid');
+  if (preset === 'all') return keys;
+  return keys.filter((k) => ESSENTIAL.includes(k));
 }
 
-/** 字段排序：必需 → 番剧 → 建议 → 别混用 → 可选 */
-const ORDER = { required: 0, ogv: 1, never: 1, recommended: 2, optional: 3 };
+/** 字段排序：必需 → 番剧 → 切号 → 浏览器自带 → 可选 */
+const ORDER = { required: 0, ogv: 1, identity: 2, auto: 3, optional: 4 };
 
 export function sortFields(keys) {
   return keys.slice().sort((a, b) => {
@@ -164,17 +185,19 @@ export function helperHelp() {
     '· name=value; name=value 字符串',
     '· Chrome 导出的 JSON',
     '',
-    '【必需】',
-    '· SESSDATA —— 登录态。它是 HttpOnly，document.cookie 拿不到，',
-    '  所以只能从 DevTools 面板复制，这是唯一途径。',
+    '【会保存的】',
+    '· SESSDATA —— 登录态。HttpOnly，document.cookie 拿不到，',
+    '  只能从 DevTools 面板复制，没有替代方案。',
+    '· DedeUserID / DedeUserID__ckMd5 / sid —— 只有切号才用得上，',
+    '  缺了切号后前端认不出「我是谁」。',
     '· bili_jct —— 番剧 OGV 必需（playview 是 POST 接口，要 csrf）。',
+    '  它无法从 SESSDATA 推导，只能一起复制。',
     '',
-    '【建议】',
-    '· DedeUserID / buvid3 / buvid4 / bili_ticket',
-    '  平时测不出差别，但触发风控（-412）时会要命，且脚本无法补救。',
-    '',
-    '【别带】',
-    '· sid —— 与 SESSDATA 成对的服务端会话，不要混入另一个账号的。',
+    '【不保存的】',
+    '· buvid3 / buvid4 / bili_ticket / buvid_fp 等设备字段。',
+    '  实测逐个删掉对接口毫无影响（SESSDATA 单独就是 4K），',
+    '  而且它们属于浏览器这台设备，不属于任何账号 ——',
+    '  存进来只会在切号时被误当成旧号残留删掉。',
     '',
     'Cookie 只写入本机的油猴存储，不会上传到任何地方。'
   ].join('\n');

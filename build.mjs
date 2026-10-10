@@ -16,7 +16,7 @@ import { ENDPOINTS, LOCAL_PATCH_PATHS } from './src/core/endpoints.js';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const HOOK_ENTRY = path.resolve(ROOT, 'src/injected/hook.js');
 const ENTRY = path.resolve(ROOT, 'src/index.js');
-const OUTFILE = path.resolve(ROOT, 'dist/bilibili-vip-proxy.user.js');
+const OUTFILE = path.resolve(ROOT, 'dist/bili-toolkit.user.js');
 
 const argv = process.argv.slice(2);
 const DEV = argv.includes('--dev');
@@ -70,7 +70,10 @@ function checkEndpoints() {
     if (seen.has(key)) fail(`端点重复：${key}`);
     seen.add(key);
     if (!ep.id || !ep.mode) fail(`端点缺少 id/mode：${JSON.stringify(ep)}`);
-    if (!['proxy', 'merge'].includes(ep.mode)) fail(`未知 mode：${ep.mode}`);
+    // 只认 'proxy'。曾经这里也放过 'merge'，但 merge 从来没有实现 ——
+    // 写上去构建能过、运行时静默按 proxy 走，是最坏的一类坑。
+    // 要加 merge，先把 proxy.js 的合并逻辑写出来，再把这里放开。
+    if (ep.mode !== 'proxy') fail(`未知 mode：${ep.mode}（目前只实现了 'proxy'）`);
   }
   for (const p of LOCAL_PATCH_PATHS) {
     if (!p.host || !p.path) fail(`本地伪装路径不合法：${JSON.stringify(p)}`);
@@ -82,32 +85,37 @@ function checkEndpoints() {
  * 这些字符串直接出现在用户面前，出现「本脚本」「我们」这类自称很出戏，
  * 而一旦写完就没人回头看，只能靠构建时卡一道。
  */
+const COPY_FILES = ['src/ui/panel.js', 'src/ui/menu.js', 'src/core/switcher.js', 'src/index.js'];
+
 function checkCopy() {
-  const raw = fs.readFileSync(path.join(ROOT, 'src/ui/panel.js'), 'utf8');
-
   const banned = ['本脚本', '我们', '您', '旧版本', '之前那版'];
-  for (const w of banned) {
-    if (raw.includes(w)) fail(`panel.js 里出现不该有的措辞：${w}`);
-  }
 
-  // 只看代码部分：先剥掉注释与 CSS 字符串，避免把文档/样式误判成文案
-  const code = raw
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
-    .replace(/const CSS = `[\s\S]*?`;/, '');
+  for (const rel of COPY_FILES) {
+    const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-  // 找 el(...) / say(...) / row(...) 里直接写的中文整句
-  const offenders = [];
-  for (const m of code.matchAll(/'([^'\\\n]{4,})'/g)) {
-    const s = m[1];
-    if (!/[\u4e00-\u9fa5]/.test(s)) continue;
-    if (s.includes('${')) continue;               // 运行时拼接
-    if (/^[×÷\s·—…/=｜|?+\-]+$/.test(s)) continue; // 纯符号
-    if (s.length < 6) continue;
-    offenders.push(s);
-  }
-  if (offenders.length) {
-    fail(`panel.js 里仍有内联中文文案，请收进 core/text.js：\n    - ${offenders.join('\n    - ')}`);
+    for (const w of banned) {
+      if (raw.includes(w)) fail(`${rel} 里出现不该有的措辞：${w}`);
+    }
+
+    // 只看代码部分：先剥掉注释与 CSS 字符串，避免把文档/样式误判成文案
+    const code = raw
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+      .replace(/const CSS = `[\s\S]*?`;/, '');
+
+    // 找直接写死的中文整句
+    const offenders = [];
+    for (const m of code.matchAll(/'([^'\\\n]{4,})'/g)) {
+      const s = m[1];
+      if (!/[\u4e00-\u9fa5]/.test(s)) continue;
+      if (s.includes('${')) continue;               // 运行时拼接
+      if (/^[×÷\s·—…/=｜|?+\-]+$/.test(s)) continue; // 纯符号
+      if (s.length < 6) continue;
+      offenders.push(s);
+    }
+    if (offenders.length) {
+      fail(`${rel} 里仍有内联中文文案，请收进 core/text.js：\n    - ${offenders.join('\n    - ')}`);
+    }
   }
 }
 
@@ -169,11 +177,11 @@ if (WATCH) {
   const ctx = await esbuild.context({ ...buildOptions(), write: false });
   await ctx.watch();
   const { host, port } = await ctx.serve({ servedir: path.dirname(OUTFILE) });
-  console.log(`\x1b[36m▸ 监听构建中… http://${host}:${port}/bilibili-vip-proxy.user.js\x1b[0m`);
+  console.log(`\x1b[36m▸ 监听构建中… http://${host}:${port}/bili-toolkit.user.js\x1b[0m`);
 } else {
   const t = Date.now();
   const result = await esbuild.build(buildOptions());
   const bytes = result.warnings.length ? '' : fs.statSync(OUTFILE).size;
-  console.log(`\x1b[32m✔ 构建完成\x1b[0m dist/bilibili-vip-proxy.user.js  ${bytes} bytes  ${Date.now() - t}ms`);
+  console.log(`\x1b[32m✔ 构建完成\x1b[0m dist/bili-toolkit.user.js  ${bytes} bytes  ${Date.now() - t}ms`);
   for (const w of result.warnings) console.warn(`  \x1b[33m! ${w.text}\x1b[0m`);
 }

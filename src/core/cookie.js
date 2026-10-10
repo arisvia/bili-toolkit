@@ -44,10 +44,11 @@ export function validateCookie(str) {
     problems.push('缺少 SESSDATA —— 这是登录态，没有它任何权益都借不到');
     return { ok: false, problems, warnings, parsed: p }; // 没有它其余检查无意义
   }
-  if (!p.DedeUserID) warnings.push('缺少 DedeUserID（账号 UID，建议带上）');
-  if (!p.buvid3 && !p.buvid4) warnings.push('缺少 buvid3/buvid4（设备指纹，容易触发 -412）');
+  // 只提示「会影响功能」的缺失。设备字段不再提示 ——
+  // 实测它们对接口无影响，且不该存（见 cookie-parse.js 的 TIERS.auto）。
+  if (!p.DedeUserID) warnings.push('缺少 DedeUserID —— 借用不受影响，但「切到此号」后前端认不出当前用户');
   if (!p.bili_jct && !p['bili-jct']) {
-    warnings.push('缺少 bili_jct（番剧 OGV 必需 —— playview 是 POST 接口要用 csrf）');
+    warnings.push('缺少 bili_jct（番剧 OGV 必需 —— playview 是 POST 接口要用 csrf，且无法从 SESSDATA 推导）');
   }
   return { ok: problems.length === 0, problems, warnings, parsed: p };
 }

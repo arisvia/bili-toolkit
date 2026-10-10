@@ -82,13 +82,16 @@ function makeEnv(cfgOverrides = {}, responder) {
   let vmGlobalRef = null;
   win.__dispatch = dispatch;
 
-  // 假的原生 XHR：只关心「有没有真的发出去」
+  // 假的原生 XHR：只关心「有没有真的发出去」，并忠实转发事件
   class FakeXHR {
     constructor() {
       this.readyState = 0;
       this.status = 0;
       this.responseType = '';
       this._headers = {};
+      this._listeners = Object.create(null);
+      /** 事件到达顺序与次数，供断言「每个事件只触发一次」 */
+      this.events = [];
     }
     open(method, url) {
       this._method = method;
@@ -100,9 +103,24 @@ function makeEnv(cfgOverrides = {}, responder) {
     send() {
       state.fetched.push({ kind: 'xhr', url: this._url });
     }
-    addEventListener() {}
-    removeEventListener() {}
-    dispatchEvent() {
+    addEventListener(type, fn) {
+      (this._listeners[type] || (this._listeners[type] = [])).push(fn);
+    }
+    removeEventListener(type, fn) {
+      const a = this._listeners[type] || [];
+      const i = a.indexOf(fn);
+      if (i >= 0) a.splice(i, 1);
+    }
+    /**
+     * 忠实模拟：真实的 dispatchEvent 会自动调用 onXxx 这个 IDL 事件处理器属性。
+     * 这里曾写成 return true 的空实现，于是「onload 被触发两次」这类缺陷
+     * 在整个测试里都看不见（钩子当时既直接调 onXxx 又派发事件）。
+     */
+    dispatchEvent(ev) {
+      this.events.push(ev.type);
+      const handler = this['on' + ev.type];
+      if (typeof handler === 'function') handler.call(this, ev);
+      for (const fn of this._listeners[ev.type] || []) fn.call(this, ev);
       return true;
     }
   }
@@ -178,6 +196,7 @@ console.log('\n[2] 白名单内的 XHR 转交沙箱并模拟响应');
 
   const xhr = new FakeXHR();
   xhr.open('GET', '//api.bilibili.com/x/player/wbi/playurl?bvid=BV1xx&cid=1');
+  xhr.onload = function () { xhr.onloadCalls = (xhr.onloadCalls || 0) + 1; };
   xhr.send();
   await sleep(30);
 
@@ -188,6 +207,38 @@ console.log('\n[2] 白名单内的 XHR 转交沙箱并模拟响应');
   check('status 为 200', xhr.status === 200);
   check('responseText 是 B 的响应', JSON.parse(xhr.responseText).data.quality === 120);
   check('getResponseHeader 可用', xhr.getResponseHeader('content-type') === 'application/json');
+
+  // 事件恰好各一次。曾经的 bug：onprogress / onload / onloadend 既被直接调用、
+  // 又随 fire() 的 dispatchEvent 再触发一遍（onXxx 是 IDL 事件处理器属性，
+  // dispatchEvent 会自动调它）。异常翻倍的 onloadend 会让包了一层
+  // 「追加数据 / 收尾」的调用方把响应处理两遍。
+  // readystatechange 按 readyState 2/3/4 触发三次是正常语义，这里不重复断言。
+  check('onload 只被调一次', xhr.onloadCalls === 1, xhr.onloadCalls);
+}
+
+console.log('\n[2b] 伪造 XHR：responseType 与事件恰好一次');
+{
+  const { win, state, FakeXHR } = makeEnv({}, () => ({
+    passthrough: false,
+    status: 200,
+    statusText: 'OK',
+    body: JSON.stringify({ code: 0, data: { quality: 120, from: 'B-account' } }),
+    headersRaw: 'content-type: application/json'
+  }));
+
+  // 播放器常先 send() 再改 responseType —— 钩子按 send 之后的当前值解码
+  const xhr = new FakeXHR();
+  xhr.open('GET', '//api.bilibili.com/x/player/wbi/playurl?bvid=BV1xx&cid=1');
+  xhr.onload = function () { xhr.onloadCalls = (xhr.onloadCalls || 0) + 1; };
+  xhr.send();
+  xhr.responseType = 'json';
+  await sleep(30);
+  check('responseType 改在 send 之后也能解码', !!(xhr.response && xhr.response.data && xhr.response.data.quality === 120), xhr.response);
+  check('onload 只触发一次', xhr.onloadCalls === 1, xhr.onloadCalls);
+  // readystatechange 按 readyState 2/3/4 触发三次是正常语义，其余必须各一次
+  const once = ['loadstart', 'progress', 'load', 'loadend'];
+  for (const t of once) check(`${t} 恰好一次`, xhr.events.filter((x) => x === t).length === 1, xhr.events);
+  check('事件顺序正确', xhr.events.join(',') === 'loadstart,readystatechange,readystatechange,progress,readystatechange,load,loadend', xhr.events);
 }
 
 console.log('\n[3] 非白名单请求原样放行');
