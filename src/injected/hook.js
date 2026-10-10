@@ -121,7 +121,7 @@
   }
 
   window.addEventListener('message', function (ev) {
-    if (ev.source !== window) return;
+    if (ev.origin && ev.origin !== location.origin) return;
     var d = ev.data;
     if (!d || d.__ns !== NS) return;
     sandboxAlive = true;

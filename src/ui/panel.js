@@ -569,9 +569,7 @@ function buildPanel(body) {
   const poolList = el('div');
   poolList.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-bottom:8px';
   poolSec.appendChild(poolList);
-  // 脱敏摘要与错配提示都挂在列表内部，才能随列表一起重绘
-  const poolFoot = el('div', 'hint');
-  poolList.appendChild(poolFoot);
+  // 错配提示挂在列表内部，随列表一起重绘
   poolSec.appendChild(details(TEXT.pool.helpTitle, TEXT.pool.help));
   body.appendChild(poolSec);
   let poolMismatchNodes = [];
@@ -587,8 +585,6 @@ function buildPanel(body) {
     poolList.textContent = '';
     poolMismatchNodes = [];
     currentTagNode = null;
-    // textContent='' 会把 poolFoot 一起摘掉，重绘时必须重新挂回去
-    poolList.appendChild(poolFoot);
     // 浏览器身份是异步拿的，而重绘可以被展开/切号/改借用源连续触发 ——
     // 不加序号的话，先发的请求可能后到，把过期的结果画进当前列表。
     const token = ++renderSeq;
@@ -598,7 +594,6 @@ function buildPanel(body) {
     }).catch(() => {});
 
     if (!o.rows.length) {
-      poolFoot.textContent = '';
       poolList.appendChild(el('div', 'hint', TEXT.pool.emptyHint));
       return o;
     }
@@ -607,20 +602,19 @@ function buildPanel(body) {
     // 否则用户会以为「我不是大会员所以没生效」
     if (o.borrowedFromOther) {
       const donor = o.rows.find((r) => r.id === o.borrowId);
-      const tip = el('div', 'hint', TEXT.pool.borrowOther + (donor ? donor.label || donor.uname || ('mid ' + donor.mid) : ''));
-      tip.style.cssText = 'color:#00a396;margin-bottom:2px';
+      const name = donor ? donor.label || donor.uname || ('mid ' + donor.mid) : '';
+      const tip = el('div', 'hint', '✨ ' + TEXT.pool.borrowOther + name);
+      tip.style.cssText = 'padding:6px 9px;border-radius:8px;background:rgba(0,163,150,.12);color:#00a396;font-weight:600;margin-bottom:4px';
       poolList.appendChild(tip);
     } else if (o.borrowMode === 'manual') {
-      const tip = el('div', 'hint', TEXT.pool.manualBorrow);
-      tip.style.cssText = 'color:#e6a23c;margin-bottom:2px';
+      const tip = el('div', 'hint', '📌 ' + TEXT.pool.manualBorrow);
+      tip.style.cssText = 'padding:6px 9px;border-radius:8px;background:rgba(230,162,60,.12);color:#e6a23c;font-weight:600;margin-bottom:4px';
       poolList.appendChild(tip);
     }
 
     for (const r of o.rows) {
       poolList.appendChild(poolRow(r, o));
     }
-
-    poolFoot.textContent = o.effectiveMasked;
     return o;
   }
 
@@ -700,44 +694,38 @@ function buildPanel(body) {
       }
     }
 
-    if (full.inPool) {
-      const tip = el('div', 'hint', TEXT.pool.inPoolTip + (full.browserUname || 'mid=' + full.browserMid));
-      tip.style.color = '#00a396';
-      poolList.appendChild(tip);
-      poolMismatchNodes.push(tip);
-      // 池里已有凭证，直接给个入口，不用让用户重新复制一遍
-      if (!full.inPoolBorrow) {
-        const b = el('button', 'act', TEXT.pool.actions.useAsBorrow);
+    // 若当前号不在池中，按探测结果提示导入；若已在池中，卡片本身已有完整信息，绝不重复显示
+    if (!full.inPool) {
+      if (full.canAutoImport) {
+        const tip = el('div', 'hint', TEXT.pool.autoImportTip + (full.browserUname || 'mid=' + full.browserMid));
+        tip.style.color = '#00a396';
+        poolList.appendChild(tip);
+        poolMismatchNodes.push(tip);
+        const b = el('button', 'act pri', TEXT.pool.actions.autoImport);
         b.style.marginTop = '4px';
-        b.addEventListener('click', () => doBorrow(full.inPoolId));
+        b.addEventListener('click', doAutoImport);
         poolList.appendChild(b);
+        autoImportBtn = b;
         poolMismatchNodes.push(b);
+      } else {
+        const tip = el('div', 'hint', TEXT.pool.notInPoolTip);
+        tip.style.color = '#e6a23c';
+        poolList.appendChild(tip);
+        poolMismatchNodes.push(tip);
       }
-    } else if (full.canAutoImport) {
-      const tip = el('div', 'hint', TEXT.pool.autoImportTip + (full.browserUname || 'mid=' + full.browserMid));
-      tip.style.color = '#00a396';
-      poolList.appendChild(tip);
-      poolMismatchNodes.push(tip);
-      const b = el('button', 'act pri', TEXT.pool.actions.autoImport);
-      b.style.marginTop = '4px';
-      b.addEventListener('click', doAutoImport);
-      poolList.appendChild(b);
-      autoImportBtn = b;
-      poolMismatchNodes.push(b);
-    } else {
-      const tip = el('div', 'hint', TEXT.pool.notInPoolTip);
-      tip.style.color = '#e6a23c';
-      poolList.appendChild(tip);
-      poolMismatchNodes.push(tip);
     }
   }
 
   function poolRow(r, o) {
     const card = el('div');
     card.dataset.acc = r.id; // 供「保存后高亮新账号」定位
-    card.style.cssText =
-      'border:1px solid var(--sep);border-radius:10px;padding:7px 9px;background:var(--hov)';
-
+    let borderCss = 'border:1px solid var(--sep);background:var(--hov);';
+    if (r.isBorrow && o.borrowedFromOther) {
+      borderCss = 'border:1px solid rgba(0,163,150,.45);background:rgba(0,163,150,.04);';
+    } else if (r.isActive) {
+      borderCss = 'border:1px solid rgba(0,180,216,.3);background:var(--hov);';
+    }
+    card.style.cssText = borderCss + 'border-radius:10px;padding:8px 10px;';
     const head = el('div');
     head.style.cssText = 'display:flex;align-items:center;gap:7px';
 
@@ -776,7 +764,7 @@ function buildPanel(body) {
     if (marks.childNodes.length) card.appendChild(marks);
 
     const acts = el('div');
-    acts.style.cssText = 'display:flex;gap:4px;margin-top:6px;flex-wrap:wrap';
+    acts.style.cssText = 'display:flex;gap:4px;margin-top:7px;flex-wrap:wrap;align-items:center';
 
     const isBrowserCurrent = o.browserMid && o.browserMid === r.mid;
     if (!isBrowserCurrent) {
@@ -799,11 +787,12 @@ function buildPanel(body) {
       acts.appendChild(b);
     }
 
-    acts.appendChild(
-      mkBtn(TEXT.pool.actions.recheck, () => doRecheck(r.id), { title: TEXT.pool.states.rechecking })
-    );
-    acts.appendChild(mkBtn(TEXT.pool.actions.rename, () => doRename(r.id)));
-    acts.appendChild(mkBtn(TEXT.pool.actions.remove, () => doForget(r.id)));
+    const mgmt = el('div');
+    mgmt.style.cssText = 'display:flex;gap:4px;margin-left:auto';
+    mgmt.appendChild(mkBtn(TEXT.pool.actions.recheck, () => doRecheck(r.id), { title: TEXT.pool.states.rechecking }));
+    mgmt.appendChild(mkBtn(TEXT.pool.actions.rename, () => doRename(r.id)));
+    mgmt.appendChild(mkBtn(TEXT.pool.actions.remove, () => doForget(r.id)));
+    acts.appendChild(mgmt);
     card.appendChild(acts);
     return card;
   }

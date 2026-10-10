@@ -39,12 +39,14 @@ function injectNow(source, done) {
   const el = document.createElement('script');
   el.textContent = source;
   el.setAttribute('data-bili-vip', '1');
-  const parent = document.documentElement || document.head || document.body;
+  const parent = document.head || document.documentElement || document.body;
   if (!parent) return false;
   parent.appendChild(el);
-  // 立刻移除节点本身，代码早已同步执行完毕
+  // 异步移除脚本节点，确保内联脚本在所有浏览器执行环境中均能完整执行
   try {
-    el.remove();
+    setTimeout(() => {
+      try { el.remove(); } catch (e) {}
+    }, 0);
   } catch (e) {}
   if (done) done(true);
   return true;

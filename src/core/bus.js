@@ -64,8 +64,8 @@ export function startBus(getConfig) {
   window.addEventListener('message', (ev) => {
     const d = ev.data;
     if (!d || d.__ns !== NS) return;
-    // 只接受同源窗口发来的消息，避免被第三方 iframe 干扰
-    if (ev.source !== window) return;
+    // 只接受同源窗口发来的消息（在沙箱与主世界跨上下文通信中，ev.source 是跨界代理对象，不能用 ev.source !== window）
+    if (ev.origin && ev.origin !== location.origin) return;
     if (d.token !== channelToken) return;
 
     switch (d.type) {
