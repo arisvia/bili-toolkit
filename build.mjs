@@ -10,8 +10,53 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
-import { meta, VERSION } from './src/meta.js';
+import {
+  VERSION,
+  NAME,
+  NAME_EN,
+  NS,
+  DESCRIPTION,
+  DESCRIPTION_EN,
+  AUTHOR,
+  LICENSE,
+  HOMEPAGE,
+  ISSUES,
+  ICON
+} from './src/meta.js';
 import { ENDPOINTS, LOCAL_PATCH_PATHS } from './src/core/endpoints.js';
+
+export const meta = `// ==UserScript==
+// @name         ${NAME}
+// @name:en      ${NAME_EN}
+// @namespace    ${NS}
+// @version      ${VERSION}
+// @description  ${DESCRIPTION}
+// @description:en  ${DESCRIPTION_EN}
+// @author       ${AUTHOR}
+// @license      ${LICENSE}
+// @icon         ${ICON}
+// @homepageURL  ${HOMEPAGE}
+// @supportURL   ${ISSUES}
+// @match        *://*.bilibili.com/*
+// @exclude      *://api.bilibili.com/*
+// @exclude      *://api.live.bilibili.com/*
+// @exclude      *://passport.bilibili.com/*
+// @run-at       document-start
+// @noframes
+// @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_deleteValue
+// @grant        GM_registerMenuCommand
+// @grant        GM_notification
+// @grant        GM_setCookie
+// @grant        GM.cookie
+// @connect      api.bilibili.com
+// @connect      api.live.bilibili.com
+// @connect      passport.bilibili.com
+// @connect      www.bilibili.com
+// ==/UserScript==
+`;
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const HOOK_ENTRY = path.resolve(ROOT, 'src/injected/hook.js');
@@ -45,7 +90,7 @@ function checkHookSource(src) {
 }
 
 function checkMeta() {
-  const required = ['@name', '@version', '@match', '@run-at', '@grant', '@connect'];
+  const required = ['@name', '@version', '@match', '@run-at', '@grant', '@connect', '@icon'];
   for (const k of required) {
     if (!meta.includes('// ' + k)) fail(`meta 缺少 // ${k}`);
   }

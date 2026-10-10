@@ -1,6 +1,8 @@
 /**
- * userscript 元数据。build.mjs 会把它作为 banner 放在产物最顶部。
- * 改版本号只需要改这里。
+ * userscript 元数据常量。
+ * 注意：这里只导出纯常量供运行时（panel、menu、log）和构建时使用。
+ * 切勿在此导出包含 `// ==UserScript==` 的模板字符串，
+ * 否则会被 esbuild 打包进正文代码作为无用死字符串残留。
  */
 
 export const VERSION = '1.0.0';
@@ -18,34 +20,8 @@ export const DESCRIPTION_EN =
   'unlocks 4K/8K/HDR/Dolby and VIP-only titles, with one-click account switching. ' +
   'Danmaku, comments and watch history stay on the logged-in account.';
 
-export const meta = `// ==UserScript==
-// @name         ${NAME}
-// @name:en      ${NAME_EN}
-// @namespace    ${NS}
-// @version      ${VERSION}
-// @description  ${DESCRIPTION}
-// @description:en  ${DESCRIPTION_EN}
-// @author       arisvia
-// @license      MIT
-// @homepageURL  https://github.com/arisvia/bili-toolkit
-// @supportURL   https://github.com/arisvia/bili-toolkit/issues
-// @match        *://*.bilibili.com/*
-// @exclude      *://api.bilibili.com/*
-// @exclude      *://api.live.bilibili.com/*
-// @exclude      *://passport.bilibili.com/*
-// @run-at       document-start
-// @noframes
-// @grant        GM_xmlhttpRequest
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        GM_deleteValue
-// @grant        GM_registerMenuCommand
-// @grant        GM_notification
-// @grant        GM_setCookie
-// @grant        GM.cookie
-// @connect      api.bilibili.com
-// @connect      api.live.bilibili.com
-// @connect      passport.bilibili.com
-// @connect      www.bilibili.com
-// ==/UserScript==
-`;
+export const AUTHOR = 'arisvia';
+export const LICENSE = 'MIT';
+export const HOMEPAGE = 'https://github.com/arisvia/bili-toolkit';
+export const ISSUES = 'https://github.com/arisvia/bili-toolkit/issues';
+export const ICON = 'https://www.bilibili.com/favicon.ico';

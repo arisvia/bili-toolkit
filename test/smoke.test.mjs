@@ -249,6 +249,8 @@ console.log('\n[9] 构建产物');
   }
   const dist = fs.readFileSync(distPath, 'utf8');
   check('userscript 头在最前面', dist.startsWith('// ==UserScript=='));
+  check('元数据头全局唯一（正文无重复模板）', dist.indexOf('// ==UserScript==') === dist.lastIndexOf('// ==UserScript=='));
+  check('包含 @icon 图标声明', dist.includes('// @icon'));
   check('run-at document-start', dist.includes('@run-at       document-start'));
   // 钩子源码是以字符串形式内联的，占位符必须原样保留在产物里，由 inject.js 在运行时替换
   check('钩子源码已内联（占位符保留待运行时替换）', dist.includes('__BILI_VIP_CFG__'));
