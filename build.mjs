@@ -1,5 +1,5 @@
 /**
- * 构建脚本：src/ (ESM)  ->  dist/bilibili-vip-proxy.user.js (单文件 userscript)
+ * 构建脚本：src/ (ESM)  ->  dist/bili-toolkit.user.js (单文件 userscript)
  *
  *   node build.mjs              生产构建（压缩）
  *   node build.mjs --dev        开发构建（不压缩、带日志）
