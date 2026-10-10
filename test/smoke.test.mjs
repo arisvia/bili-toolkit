@@ -243,6 +243,10 @@ console.log('\n[8] 钩子源码与自检协议');
 console.log('\n[9] 构建产物');
 {
   const distPath = path.join(ROOT, 'dist/bili-toolkit.user.js');
+  if (!fs.existsSync(distPath)) {
+    const { execFileSync } = await import('node:child_process');
+    execFileSync(process.execPath, ['build.mjs'], { cwd: ROOT, stdio: 'ignore' });
+  }
   const dist = fs.readFileSync(distPath, 'utf8');
   check('userscript 头在最前面', dist.startsWith('// ==UserScript=='));
   check('run-at document-start', dist.includes('@run-at       document-start'));

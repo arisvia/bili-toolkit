@@ -27,8 +27,12 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      - name: 构建产物
+        run: npm run build
+
       - name: 单元测试
         run: npm test
+
       - name: 色彩对比度检查
         run: npm run check:contrast
 
@@ -36,9 +40,6 @@ jobs:
       # 只读公开接口，不携带任何 Cookie。
       - name: 线上契约校验
         run: npm run verify:online
-
-      - name: 构建产物
-        run: npm run build
 
       - name: 产物校验与打包
         run: npm run release
