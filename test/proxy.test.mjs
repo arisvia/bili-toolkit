@@ -423,6 +423,52 @@ console.log('\n[9] 会员字段补丁会作用在代理响应上');
   check('vip.status -> 1', d.vip.status === 1);
   check('vipStatus -> 1', d.vipStatus === 1);
 }
+console.log('\n[10] summarize 提取流信息：支持 UGC(data) 与 PGC(result) 及 durl 回落');
+{
+  const { summarize } = await import('../src/core/proxy.js');
+  // UGC 格式
+  const ugc = summarize(JSON.stringify({
+    code: 0,
+    data: {
+      quality: 80,
+      dash: { video: [{ id: 80, codecid: 7, bandwidth: 2000000, width: 1920, height: 1080 }] },
+      support_formats: [{ quality: 80 }, { quality: 64 }]
+    }
+  }));
+  check('UGC quality 提取', ugc.quality === 80, ugc.quality);
+  check('UGC videoStreams 提取', ugc.videoStreams.length === 1 && ugc.videoStreams[0].width === 1920);
+  check('UGC formats 提取', ugc.formats.includes(80) && ugc.formats.includes(64));
+
+  // PGC / OGV 番剧格式（字段在 result.video_info）
+  const pgc = summarize(JSON.stringify({
+    code: 0,
+    result: {
+      video_info: {
+        quality: 120,
+        dash: { video: [{ id: 120, codecid: 13, bandwidth: 4500000, width: 3840, height: 2160 }] },
+        support_formats: [{ quality: 120 }, { quality: 80 }]
+      }
+    }
+  }));
+  check('PGC result.video_info quality 提取', pgc.quality === 120, pgc.quality);
+  check('PGC videoStreams 提取', pgc.videoStreams[0].width === 3840);
+  check('PGC formats 提取', pgc.formats.includes(120));
+
+  // durl 回落提取（无 dash 时提取码率与 codec）
+  const durlRes = summarize(JSON.stringify({
+    code: 0,
+    result: {
+      video_info: {
+        quality: 32,
+        video_codecid: 7,
+        durl: [{ size: 50000000, length: 300000 }]
+      }
+    }
+  }));
+  check('durl quality 提取', durlRes.quality === 32);
+  check('durl codec 提取', durlRes.codec === 7);
+  check('durl kbps 计算', durlRes.kbps > 1000, durlRes.kbps);
+}
 
 console.log('');
 if (failed) {

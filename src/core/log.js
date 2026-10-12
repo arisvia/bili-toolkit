@@ -18,6 +18,13 @@ export const stats = {
   current: null
 };
 
+/** 画质码 → 默认标准分辨率 [宽, 高]（当码流未显式带宽高时兜底） */
+export const STD_RESOLUTION = {
+  6: [426, 240], 16: [640, 360], 32: [852, 480], 64: [1280, 720],
+  74: [1280, 720], 80: [1920, 1080], 112: [1920, 1080], 116: [1920, 1080],
+  120: [3840, 2160], 125: [3840, 2160], 126: [3840, 2160], 127: [7680, 4320]
+};
+
 /** 画质码 → 名称 */
 export const QUALITY_NAME = {
   6: '240P', 16: '360P', 32: '480P', 64: '720P', 74: '720P60', 80: '1080P',
@@ -32,24 +39,35 @@ export function qualityName(q) {
 }
 
 export function codecName(c) {
-  return CODEC_NAME[c] || (c === undefined ? '—' : 'codec' + c);
+  return CODEC_NAME[c] || (c === undefined || c === null ? '—' : 'codec' + c);
 }
 
 /** 记录一次播放流信息；cache=true 表示来自缓存而非新请求 */
 export function setCurrentMedia(epId, summary, cache) {
   const vids = (summary && summary.videoStreams) || [];
   const best = vids.reduce((a, b) => (!a || (b.bandwidth || 0) > (a.bandwidth || 0) ? b : a), null);
+  const q = summary ? summary.quality : null;
+  const stdRes = (q !== null && STD_RESOLUTION[q]) || null;
+  const width = (best && best.width) || (summary && summary.width) || (stdRes ? stdRes[0] : null);
+  const height = (best && best.height) || (summary && summary.height) || (stdRes ? stdRes[1] : null);
+  const codec = (best && best.codec) || (summary && summary.codec) || null;
+  const kbps = (best && best.bandwidth)
+    ? Math.round(best.bandwidth / 1000)
+    : (summary && summary.kbps)
+    ? summary.kbps
+    : null;
+
   stats.current = {
     at: Date.now(),
     endpoint: epId,
-    quality: summary ? summary.quality : null,
+    quality: q,
     fromCache: !!cache,
     videoStreams: vids.length,
     audioStreams: (summary && summary.audioStreams) || 0,
-    width: best ? best.width : null,
-    height: best ? best.height : null,
-    codec: best ? best.codec : null,
-    kbps: best && best.bandwidth ? Math.round(best.bandwidth / 1000) : null,
+    width,
+    height,
+    codec,
+    kbps,
     durl: (summary && summary.durl) || 0,
     formats: (summary && summary.formats) || []
   };

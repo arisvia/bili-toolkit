@@ -163,7 +163,8 @@ export const TEXT = {
       importNeedCopy: '本浏览器读不到登录 Cookie，请从 DevTools 复制后手动添加',
       borrowAuto: '已恢复自动挑选',
       removed: '已从池中移除',
-      stale: '会员信息超过一天没更新',
+      stale: '待刷新(超24h)',
+      staleTip: '本地超过24小时未核验大会员状态，不代表Cookie失效。点击右侧重探即可联网刷新。',
       /**
        * 池里记着 activeId，但浏览器实际登录的不是它 —— 多半是用户在别处换了登录。
        * 这种状态下最危险的是界面还在显示「登录中」：用户会以为池子是准的。

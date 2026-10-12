@@ -90,7 +90,7 @@ export function reorderStreams(root, codecPref = 'auto') {
   const pri = CODEC_PRIORITY[codecPref];
   if (!pri || !pri.length) return root;
 
-  const d = root.data;
+  const d = root.data || root.result;
   if (!d || typeof d !== 'object') return root;
   const pu = d.playurl && typeof d.playurl === 'object' ? d.playurl : null;
   const src = pu || (d.video_info && typeof d.video_info === 'object' ? d.video_info : d);

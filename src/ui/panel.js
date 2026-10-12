@@ -102,14 +102,27 @@ const CSS = `
   display: flex; align-items: center; gap: 8px; padding: 12px var(--pad-x) 10px;
   position: sticky; top: 0; z-index: 2;
   background: var(--bg-solid);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--sep);
+  box-shadow: 0 4px 18px -4px var(--sh), inset 0 1px 0 var(--hl);
 }
-#${ID} .title { font-size: 13px; font-weight: 600; flex: 1; }
+#${ID} .title {
+  font-size: 13.5px; font-weight: 650; flex: 1; letter-spacing: .2px;
+  display: flex; align-items: center; gap: 7px;
+}
+#${ID} .title::before {
+  content: ''; width: 8px; height: 8px; border-radius: 50%;
+  background: linear-gradient(135deg, #fb7299, #00a396);
+  box-shadow: 0 0 8px var(--ring);
+  display: inline-block; flex-shrink: 0;
+}
 #${ID} .ver {
-  font-size: 10px; font-weight: 550; font-family: var(--mono);
-  padding: 1px 7px; border-radius: 99px;
-  background: var(--hov); border: 1px solid var(--sep);
-  color: var(--fg); opacity: .72; line-height: 1.4;
+  font-size: 10px; font-weight: 600; font-family: var(--mono);
+  padding: 1.5px 8px; border-radius: 99px;
+  background: var(--hov2); border: 1px solid var(--ring-soft);
+  color: var(--fg); opacity: .85; line-height: 1.4;
+  box-shadow: inset 0 1px 0 var(--hl);
 }
 #${ID} .x {
   cursor: pointer; opacity: .6; font-size: 13px; line-height: 1;
@@ -760,7 +773,11 @@ function buildPanel(body) {
       marks.appendChild(currentTagNode);
     }
     if (r.isBorrow) marks.appendChild(mark('borrow', TEXT.pool.labels.borrowed));
-    if (r.stale && r.checkedAt) marks.appendChild(mark('muted', TEXT.pool.states.stale));
+    if (r.stale && r.checkedAt) {
+      const t = mark('muted', TEXT.pool.states.stale);
+      t.title = TEXT.pool.states.staleTip;
+      marks.appendChild(t);
+    }
     if (marks.childNodes.length) card.appendChild(marks);
 
     const acts = el('div');
@@ -776,7 +793,8 @@ function buildPanel(body) {
       b.addEventListener('click', () => doSwitch(r.id));
       acts.appendChild(b);
     }
-    if (!r.isBorrow) {
+    // 只有拥有大会员权益的账号才提供「用它借用」；非会员账号无权益可借，避免误导
+    if (r.vip && !r.isBorrow) {
       const b = el('button', 'act', TEXT.pool.actions.useAsBorrow);
       b.addEventListener('click', () => doBorrow(r.id));
       acts.appendChild(b);

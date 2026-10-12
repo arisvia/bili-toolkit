@@ -20,7 +20,7 @@ import { log, stats, setCurrentMedia } from './log.js';
 export function summarize(text) {
   try {
     const o = JSON.parse(text);
-    const d = o && o.data;
+    const d = (o && (o.data || o.result)) || null;
     if (!d || typeof d !== 'object') return { quality: null };
     const pu = d.playurl && typeof d.playurl === 'object' ? d.playurl : null;
     const src = pu || (d.video_info && typeof d.video_info === 'object' ? d.video_info : d);
@@ -46,12 +46,34 @@ export function summarize(text) {
       }
     }
 
+    const rawFormats = Array.isArray(src.support_formats)
+      ? src.support_formats
+      : Array.isArray(d.support_formats)
+      ? d.support_formats
+      : [];
+    const formats = rawFormats.length
+      ? rawFormats.map((f) => (f && typeof f === 'object' ? f.quality : f)).filter(Boolean)
+      : Array.isArray(src.accept_quality)
+      ? src.accept_quality
+      : Array.isArray(d.accept_quality)
+      ? d.accept_quality
+      : [];
+
+    let durlKbps = null;
+    const durlList = Array.isArray(src.durl) ? src.durl : [];
+    if (durlList.length && durlList[0] && durlList[0].size && durlList[0].length) {
+      const durSec = durlList[0].length / 1000;
+      if (durSec > 0) durlKbps = Math.round((durlList[0].size * 8) / durSec / 1000);
+    }
+
     return {
       quality: src.quality !== undefined ? src.quality : null,
       videoStreams,
       audioStreams: audioStreams.length,
-      durl: Array.isArray(src.durl) ? src.durl.length : 0,
-      formats: Array.isArray(d.support_formats) ? d.support_formats.map((f) => f.quality) : [],
+      codec: src.video_codecid || src.codecid || null,
+      kbps: durlKbps,
+      durl: durlList.length,
+      formats,
       timelength: src.timelength
     };
   } catch {
