@@ -356,23 +356,6 @@
     playinfoHooked = true;
   } catch (e) {}
 
-  // 屏蔽新版播放器的预取数据
-  var hydrateValue;
-  try {
-    hydrateValue = window.__PLAYURL_HYDRATE_DATA__;
-  } catch (e) {}
-  try {
-    Object.defineProperty(window, '__PLAYURL_HYDRATE_DATA__', {
-      configurable: true,
-      enumerable: true,
-      get: function () {
-        return hidePlayinfo ? undefined : hydrateValue;
-      },
-      set: function (v) {
-        hydrateValue = v;
-      }
-    });
-  } catch (e) {}
 
   /* ---------------- nanoPlayer (番剧/OGV现代播放器) 劫持 ---------------- */
   function hookNano(nano) {
@@ -571,7 +554,16 @@
       return root;
     }
     if (typeof root.vipStatus === 'number' && root.vipStatus !== 1) root.vipStatus = 1;
+    if (typeof root.vip_status === 'number' && root.vip_status !== 1) root.vip_status = 1;
+    if (typeof root.vip_status === 'string' && root.vip_status !== '1') root.vip_status = '1';
     if (typeof root.vipType === 'number' && root.vipType !== 2) root.vipType = 2;
+    if (typeof root.vip_type === 'number' && root.vip_type !== 2) root.vip_type = 2;
+    if (typeof root.vip_type === 'string' && root.vip_type !== '2') root.vip_type = '2';
+    if (typeof root.is_preview === 'number' && root.is_preview !== 0) root.is_preview = 0;
+    if (root.has_paid === false) root.has_paid = true;
+    if (root.real_vip === false) root.real_vip = true;
+    if (root.play_detail === 'PLAY_PREVIEW') root.play_detail = '';
+    if (typeof root.pay_check === 'number' && root.pay_check !== 1) root.pay_check = 1;
     if (looksLikeVipObject(root.vip)) patchVipObject(root.vip);
     if (looksLikeVipObject(root.vip_info)) patchVipObject(root.vip_info);
     for (var k in root) {

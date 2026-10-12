@@ -41,10 +41,18 @@ export function patchVipFlags(root) {
     for (const k of VIP_KEYS) {
       if (k === 'vipStatus' || k === 'vip_status') {
         if (typeof o[k] === 'number' && o[k] !== 1) o[k] = 1;
+        if (typeof o[k] === 'string' && o[k] !== '1') o[k] = '1';
       } else if (typeof o[k] === 'number' && o[k] !== 2) {
         o[k] = 2;
+      } else if (typeof o[k] === 'string' && o[k] !== '2') {
+        o[k] = '2';
       }
     }
+    if (typeof o.is_preview === 'number' && o.is_preview !== 0) o.is_preview = 0;
+    if (o.has_paid === false) o.has_paid = true;
+    if (o.real_vip === false) o.real_vip = true;
+    if (o.play_detail === 'PLAY_PREVIEW') o.play_detail = '';
+    if (typeof o.pay_check === 'number' && o.pay_check !== 1) o.pay_check = 1;
     for (const k of VIP_OBJ_KEYS) {
       if (looksLikeVipObject(o[k])) patchVipObject(o[k]);
     }

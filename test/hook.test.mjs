@@ -345,7 +345,7 @@ console.log('\n[9] 总开关关闭（沙箱回放行）时对页面完全无感'
   env.win.__teardown();
 }
 
-console.log('\n[10] nanoPlayer (现代番剧播放器) 劫持与 __PLAYURL_HYDRATE_DATA__ 屏蔽');
+console.log('\n[10] nanoPlayer (现代番剧播放器) 劫持与流地址接管');
 {
   let sandboxedUrl = null;
   const env = makeEnv({ hidePlayinfo: true }, (req) => {
@@ -356,9 +356,6 @@ console.log('\n[10] nanoPlayer (现代番剧播放器) 劫持与 __PLAYURL_HYDRA
     };
   });
   const win = env.win;
-  win.__PLAYURL_HYDRATE_DATA__ = { dummy: 1 };
-  check('hydrate 数据被屏蔽', win.__PLAYURL_HYDRATE_DATA__ === undefined);
-
   // 模拟真实页面初始化 nanoPlayer
   const dummyNano = {
     createPlayer: (cfg) => ({ cfg })
