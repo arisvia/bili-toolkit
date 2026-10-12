@@ -1,6 +1,6 @@
 {
   "name": "bili-toolkit",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "type": "module",
   "description": "B 站用户脚本工具箱：多账号权益借用、一键切换、播放体验增强",

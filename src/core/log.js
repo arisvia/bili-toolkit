@@ -45,8 +45,12 @@ export function codecName(c) {
 /** 记录一次播放流信息；cache=true 表示来自缓存而非新请求 */
 export function setCurrentMedia(epId, summary, cache) {
   const vids = (summary && summary.videoStreams) || [];
+  if (stats.current && stats.current.videoStreams > 0 && vids.length === 0 && (!summary || !summary.durl)) {
+    return;
+  }
   const best = vids.reduce((a, b) => (!a || (b.bandwidth || 0) > (a.bandwidth || 0) ? b : a), null);
-  const q = summary ? summary.quality : null;
+  const maxVidQuality = vids.reduce((m, v) => Math.max(m, v.id || 0), 0);
+  const q = maxVidQuality > 0 ? maxVidQuality : (summary ? summary.quality : null);
   const stdRes = (q !== null && STD_RESOLUTION[q]) || null;
   const width = (best && best.width) || (summary && summary.width) || (stdRes ? stdRes[0] : null);
   const height = (best && best.height) || (summary && summary.height) || (stdRes ? stdRes[1] : null);
@@ -56,7 +60,6 @@ export function setCurrentMedia(epId, summary, cache) {
     : (summary && summary.kbps)
     ? summary.kbps
     : null;
-
   stats.current = {
     at: Date.now(),
     endpoint: epId,

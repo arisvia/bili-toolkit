@@ -356,6 +356,8 @@ console.log('\n[10] nanoPlayer (现代番剧播放器) 劫持与流地址接管'
     };
   });
   const win = env.win;
+  win.__PLAYURL_HYDRATE_DATA__ = { result: { video_info: { is_preview: 1 } } };
+  check('hydrate 数据保留对象且试看字段被 patch', win.__PLAYURL_HYDRATE_DATA__ && win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 0);
   // 模拟真实页面初始化 nanoPlayer
   const dummyNano = {
     createPlayer: (cfg) => ({ cfg })

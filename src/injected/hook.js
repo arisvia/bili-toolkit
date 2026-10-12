@@ -347,13 +347,34 @@
       configurable: true,
       enumerable: true,
       get: function () {
-        return hidePlayinfo ? undefined : playinfoValue;
+        if (!hidePlayinfo) return playinfoValue;
+        if (playinfoValue && (playinfoValue.result || playinfoValue.video_info)) {
+          return patchVipFlags(playinfoValue, 0);
+        }
+        return undefined;
       },
       set: function (v) {
-        playinfoValue = v;
+        playinfoValue = hidePlayinfo && v ? patchVipFlags(v, 0) : v;
       }
     });
     playinfoHooked = true;
+  } catch (e) {}
+
+  var hydrateValue;
+  try {
+    hydrateValue = window.__PLAYURL_HYDRATE_DATA__;
+  } catch (e) {}
+  try {
+    Object.defineProperty(window, '__PLAYURL_HYDRATE_DATA__', {
+      configurable: true,
+      enumerable: true,
+      get: function () {
+        return hidePlayinfo && hydrateValue ? patchVipFlags(hydrateValue, 0) : hydrateValue;
+      },
+      set: function (v) {
+        hydrateValue = hidePlayinfo && v ? patchVipFlags(v, 0) : v;
+      }
+    });
   } catch (e) {}
 
 
