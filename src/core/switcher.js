@@ -7,7 +7,7 @@
  *   · 探测身份 → 结果写回池子，同时镜像回旧版键
  * 这层就是把这些不漏。
  */
-import { sanitizeCookie, validateCookie } from './cookie.js';
+import { sanitizeCookie, validateCookie, parseCookie } from './cookie.js';
 import { TEXT } from './text.js';
 import { log } from './log.js';
 import { resetCache } from './proxy.js';
@@ -174,12 +174,20 @@ export async function switchLoginTo(id) {
     };
   }
 
+  // 关键自愈：如果 target.cookie 缺少 DedeUserID，但 target.mid 已知，
+  // 必须自动补齐 DedeUserID，否则切号后浏览器 document.cookie 里没有 uid，B 站前端认不出人！
+  let cookieToApply = target.cookie;
+  const parsed = parseCookie(cookieToApply);
+  if (!parsed.DedeUserID && target.mid) {
+    cookieToApply = `${cookieToApply}; DedeUserID=${target.mid}`;
+  }
+
   // 切换前「已知存在」的字段：池内记录的旧账号 Cookie（它就是上次写进去的那份，
   // 含 HttpOnly 字段）＋ 页面 document.cookie。两者合起来才够算出该删谁。
   const before = presentIdentityKeys(borrowCookie());
-  const stale = staleKeysFor(target.cookie, before);
+  const stale = staleKeysFor(cookieToApply, before);
 
-  const applied = await applyAccount(target.cookie, stale);
+  const applied = await applyAccount(cookieToApply, stale);
   if (!applied.ok) {
     return { ok: false, reason: applied.reason, needReload: false, stale, written: applied.written };
   }

@@ -29,12 +29,22 @@ const COOKIE_PATH = '/';
  *   1 = 仅 GM_setCookie —— 只能覆盖写；删除靠「写一个过期时间」等价实现
  *   0 = 都没有       —— 切号整体不可用
  */
-function apiLevel() {
+export function getCookieApi() {
   try {
-    if (typeof GM !== 'undefined' && GM && GM.cookie && typeof GM.cookie.set === 'function') return 2;
-  } catch (e) {
-    /* GM 是沙箱注入的全局，取不到就当没有 */
-  }
+    if (typeof GM !== 'undefined' && GM && GM.cookie && typeof GM.cookie.set === 'function') {
+      return GM.cookie;
+    }
+  } catch (e) {}
+  try {
+    if (typeof GM_cookie !== 'undefined' && GM_cookie && typeof GM_cookie.set === 'function') {
+      return GM_cookie;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function apiLevel() {
+  if (getCookieApi()) return 2;
   if (typeof GM_setCookie === 'function') return 1;
   return 0;
 }
@@ -55,6 +65,8 @@ export function canWriteCookies() {
  * 只等 callback 会让请求永远悬着，切号界面就一直卡在「正在改写」。
  */
 function gmCookieSet(details) {
+  const api = getCookieApi();
+  if (!api) return Promise.reject(new Error('no-cookie-api'));
   return new Promise((resolve, reject) => {
     let settled = false;
     const done = (err) => {
@@ -65,7 +77,7 @@ function gmCookieSet(details) {
       else reject(new Error(String(err)));
     };
     try {
-      const p = GM.cookie.set(details, done);
+      const p = api.set(details, done);
       if (p && typeof p.then === 'function') p.then(() => done(), done);
     } catch (e) {
       reject(e);
@@ -74,6 +86,8 @@ function gmCookieSet(details) {
 }
 
 function gmCookieDelete(details) {
+  const api = getCookieApi();
+  if (!api) return Promise.reject(new Error('no-cookie-api'));
   return new Promise((resolve, reject) => {
     let settled = false;
     const done = (err) => {
@@ -83,7 +97,7 @@ function gmCookieDelete(details) {
       else reject(new Error(String(err)));
     };
     try {
-      const p = GM.cookie.delete(details, done);
+      const p = api.delete(details, done);
       if (p && typeof p.then === 'function') p.then(() => done(), done);
     } catch (e) {
       reject(e);
@@ -159,6 +173,7 @@ export async function applyAccount(cookieString, staleKeys = []) {
     try {
       if (level >= 2) {
         const details = {
+          url: 'https://www.bilibili.com/',
           name: key,
           value,
           domain: COOKIE_DOMAIN,
@@ -171,6 +186,11 @@ export async function applyAccount(cookieString, staleKeys = []) {
         const parts = [`${key}=${value}`, `path=${COOKIE_PATH}`, `domain=${COOKIE_DOMAIN}`, 'secure'];
         if (HTTP_ONLY_COOKIE_KEYS.has(key)) parts.push('httponly');
         await gmSetCookie(parts.join('; '), { domain: COOKIE_DOMAIN, path: COOKIE_PATH });
+      }
+      if (!HTTP_ONLY_COOKIE_KEYS.has(key) && typeof document !== 'undefined' && typeof document.cookie === 'string') {
+        try {
+          document.cookie = `${key}=${value}; path=${COOKIE_PATH}; domain=${COOKIE_DOMAIN}; secure`;
+        } catch (e) {}
       }
       written.push(key);
     } catch (e) {
@@ -195,8 +215,17 @@ export async function applyAccount(cookieString, staleKeys = []) {
     for (const key of staleKeys) {
       if (target[key] !== undefined) continue; // 目标账号本来就有，不删
       try {
-        if (level >= 2) await gmCookieDelete({ name: key, url: 'https://www.bilibili.com/' });
-        else await gmSetCookieExpired(key, COOKIE_DOMAIN, COOKIE_PATH);
+        if (level >= 2) {
+          await gmCookieDelete({ name: key, url: 'https://www.bilibili.com/' });
+          await gmCookieDelete({ name: key, domain: 'www.bilibili.com', url: 'https://www.bilibili.com/' }).catch(() => {});
+        } else {
+          await gmSetCookieExpired(key, COOKIE_DOMAIN, COOKIE_PATH);
+        }
+        if (typeof document !== 'undefined' && typeof document.cookie === 'string') {
+          try {
+            document.cookie = `${key}=; path=${COOKIE_PATH}; domain=${COOKIE_DOMAIN}; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+          } catch (e) {}
+        }
         removed.push(key);
       } catch (e) {
         log.warn('删除旧 Cookie 失败', key, e && e.message);

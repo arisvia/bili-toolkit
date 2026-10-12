@@ -49,9 +49,8 @@ export const meta = `// ==UserScript==
 // @grant        GM_deleteValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_notification
-// @grant        GM_setCookie
+// @grant        GM_cookie
 // @grant        GM.cookie
-// @connect      api.bilibili.com
 // @connect      api.live.bilibili.com
 // @connect      passport.bilibili.com
 // @connect      www.bilibili.com
