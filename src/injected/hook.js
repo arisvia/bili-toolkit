@@ -347,14 +347,10 @@
       configurable: true,
       enumerable: true,
       get: function () {
-        if (!hidePlayinfo) return playinfoValue;
-        if (playinfoValue && (playinfoValue.result || playinfoValue.video_info)) {
-          return patchVipFlags(playinfoValue, 0);
-        }
-        return undefined;
+        return hidePlayinfo ? undefined : playinfoValue;
       },
       set: function (v) {
-        playinfoValue = hidePlayinfo && v ? patchVipFlags(v, 0) : v;
+        playinfoValue = v;
       }
     });
     playinfoHooked = true;
