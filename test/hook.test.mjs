@@ -144,6 +144,7 @@ function makeEnv(cfgOverrides = {}, responder) {
     hosts: ['api.bilibili.com', 'api.live.bilibili.com'],
     sandboxEntries: [
       { host: 'api.bilibili.com', path: '/x/player/wbi/playurl', method: 'GET' },
+      { host: 'api.bilibili.com', path: '/pgc/player/web/v2/playurl', method: 'GET' },
       { host: 'api.bilibili.com', path: '/ogv/player/playview', method: 'POST' }
     ],
     localEntries: [{ host: 'api.bilibili.com', path: '/x/web-interface/nav' }],
@@ -342,6 +343,41 @@ console.log('\n[9] 总开关关闭（沙箱回放行）时对页面完全无感'
   check('走原生请求', env.state.fetched.length === 1);
   check('XHR 不被伪造完成态', xhr.readyState !== 4);
   env.win.__teardown();
+}
+
+console.log('\n[10] nanoPlayer (现代番剧播放器) 劫持与 __PLAYURL_HYDRATE_DATA__ 屏蔽');
+{
+  let sandboxedUrl = null;
+  const env = makeEnv({ hidePlayinfo: true }, (req) => {
+    sandboxedUrl = req.url;
+    return {
+      body: JSON.stringify({ code: 0, result: { video_info: { quality: 120 } } }),
+      headersRaw: 'content-type: application/json'
+    };
+  });
+  const win = env.win;
+  win.__PLAYURL_HYDRATE_DATA__ = { dummy: 1 };
+  check('hydrate 数据被屏蔽', win.__PLAYURL_HYDRATE_DATA__ === undefined);
+
+  // 模拟真实页面初始化 nanoPlayer
+  const dummyNano = {
+    createPlayer: (cfg) => ({ cfg })
+  };
+  win.nano = dummyNano;
+  const created = win.nano.createPlayer({
+    episodeId: 766336,
+    prefetch: { playUrl: { preview: true } },
+    requestConfig: {
+      reqHttpPlayUrlInfo: () => Promise.resolve({ preview: true })
+    }
+  });
+
+  check('prefetch.playUrl 被删除', created.cfg.prefetch.playUrl === undefined);
+  check('reqHttpPlayUrlInfo 属性被显式删除', created.cfg.requestConfig.reqHttpPlayUrlInfo === undefined);
+  check('reqHttpPlayUrlInfoScope 被删除', created.cfg.requestConfig.reqHttpPlayUrlInfoScope === undefined);
+  await win.fetch('https://api.bilibili.com/pgc/player/web/v2/playurl?ep_id=766336');
+  check('回落请求被接管转交沙箱', sandboxedUrl && sandboxedUrl.includes('ep_id=766336'), sandboxedUrl);
+  win.__teardown();
 }
 
 console.log('');

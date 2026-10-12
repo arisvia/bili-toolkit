@@ -356,6 +356,60 @@
     playinfoHooked = true;
   } catch (e) {}
 
+  // 屏蔽新版播放器的预取数据
+  var hydrateValue;
+  try {
+    hydrateValue = window.__PLAYURL_HYDRATE_DATA__;
+  } catch (e) {}
+  try {
+    Object.defineProperty(window, '__PLAYURL_HYDRATE_DATA__', {
+      configurable: true,
+      enumerable: true,
+      get: function () {
+        return hidePlayinfo ? undefined : hydrateValue;
+      },
+      set: function (v) {
+        hydrateValue = v;
+      }
+    });
+  } catch (e) {}
+
+  /* ---------------- nanoPlayer (番剧/OGV现代播放器) 劫持 ---------------- */
+  function hookNano(nano) {
+    if (!nano || nano.__biliVipHooked) return nano;
+    nano.__biliVipHooked = true;
+    var origCreate = nano.createPlayer;
+    if (typeof origCreate !== 'function') return nano;
+
+    nano.createPlayer = function (config) {
+      if (config && hidePlayinfo) {
+        if (config.prefetch) {
+          delete config.prefetch.playUrl;
+        }
+        if (config.requestConfig) {
+          delete config.requestConfig.reqHttpPlayUrlInfo;
+          delete config.requestConfig.reqHttpPlayUrlInfoScope;
+        }
+      }
+      return origCreate.apply(this, arguments);
+    };
+    return nano;
+  }
+
+  var nanoVal = window.nano;
+  if (nanoVal) hookNano(nanoVal);
+  try {
+    Object.defineProperty(window, 'nano', {
+      configurable: true,
+      enumerable: true,
+      get: function () {
+        return nanoVal;
+      },
+      set: function (v) {
+        nanoVal = hookNano(v);
+      }
+    });
+  } catch (e) {}
   /**
    * 只改首屏 SSR 状态里的区域字段。
    *
