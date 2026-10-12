@@ -72,7 +72,7 @@ jobs:
       - run: npm run release
 
       - name: 发布到 Releases
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*.user.js
           make_latest: true
