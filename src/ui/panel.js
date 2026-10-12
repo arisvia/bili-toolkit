@@ -101,9 +101,9 @@ const CSS = `
 #${ID} .head {
   display: flex; align-items: center; gap: 8px; padding: 12px var(--pad-x) 10px;
   position: sticky; top: 0; z-index: 2;
-  background: var(--bg-solid);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--bg-head);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--sep);
   box-shadow: 0 4px 18px -4px var(--sh), inset 0 1px 0 var(--hl);
 }
@@ -173,6 +173,15 @@ const CSS = `
 #${ID} .txt::-webkit-scrollbar { width: 6px; }
 #${ID} .txt::-webkit-scrollbar-track { background: transparent; }
 #${ID} .txt::-webkit-scrollbar-thumb { background: var(--sb); border-radius: 99px; }
+#${ID} .ta-wrap { position: relative; width: 100%; box-sizing: border-box; }
+#${ID} .ta-wrap .txt { padding-right: 28px; }
+#${ID} .ta-action {
+  position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 6px;
+  border: 1px solid transparent; background: transparent; color: var(--fg); opacity: .72;
+  font-size: 11px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: opacity .16s, background .16s, border-color .16s; padding: 0;
+}
+#${ID} .ta-action:hover { opacity: .95; background: var(--hov2); border-color: var(--sep); }
 #${ID} .msg { font-size: 11.5px; margin-top: 6px; white-space: pre-line; line-height: 1.5; }
 #${ID} .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 #${ID} button.act {
@@ -282,11 +291,11 @@ const CSS = `
     --dotc: #6fd3bd; --hov: rgba(255,255,255,.07); --hov2: rgba(255,255,255,.13);
     --seg-on: rgba(255,255,255,.15); --sep: rgba(255,255,255,.085); --bd2: rgba(255,255,255,.22);
     --pri: rgba(120,220,200,.24); --pri-hover: rgba(120,220,200,.34); --pri-fg: #d6fbf2;
-    --bg-solid: rgba(30,30,34,.92);
+    --bg-head: rgba(30,30,34,.72);
     --btn-hl: rgba(255,255,255,.14);
     --tag-on-bg: rgba(120,220,200,.16); --tag-on-fg: #7fe3cd;
-    --tag-borrow-bg: rgba(251,114,153,.18); --tag-borrow-fg: #ffa8c2;
-    --tag-vip-bg: rgba(120,220,200,.16); --tag-vip-fg: #7fe3cd;
+    --tag-borrow-bg: rgba(230,162,60,.20); --tag-borrow-fg: #ffc966;
+    --tag-vip-bg: rgba(251,114,153,.20); --tag-vip-fg: #ffa3be;
     --tag-plain-bg: rgba(255,255,255,.09); --tag-plain-fg: rgba(255,255,255,.7);
     --tag-muted-fg: rgba(255,255,255,.55);
   }
@@ -299,7 +308,7 @@ const CSS = `
     --dotc: #00a396; --hov: rgba(20,22,26,.045); --hov2: rgba(20,22,26,.09);
     --seg-on: rgba(255,255,255,.95); --sep: rgba(20,22,26,.075); --bd2: rgba(20,22,26,.16);
     --pri: rgba(0,150,136,.15); --pri-hover: rgba(0,150,136,.24);
-    --bg-solid: rgba(252,252,253,.93);
+    --bg-head: rgba(252,252,253,.72);
     /*
      * 前景色是算出来的，不是挑出来的（npm run check:contrast）：
      *   #ffffff   → 1.27:1（几乎不可见，就是「按钮发白看不清」的由来）
@@ -309,10 +318,9 @@ const CSS = `
     --pri-fg: #007065;
     --btn-hl: rgba(255,255,255,.5);
     --tag-on-bg: rgba(0,150,136,.13); --tag-on-fg: #007065;
-    --tag-borrow-bg: rgba(219,68,120,.12); --tag-borrow-fg: #b3386c;
-    --tag-vip-bg: rgba(0,150,136,.13); --tag-vip-fg: #007065;
+    --tag-borrow-bg: rgba(230,162,60,.14); --tag-borrow-fg: #8c5200;
+    --tag-vip-bg: rgba(251,114,153,.14); --tag-vip-fg: #b82153;
     --tag-plain-bg: rgba(20,22,26,.06); --tag-plain-fg: rgba(20,22,26,.6);
-    /* 「浏览器自带」看着该淡，但它是**文字**：.45 只有 2.9:1，低于 AA。取 .62 = 5.05:1 */
     --tag-muted-fg: rgba(20,22,26,.62);
   }
 }
@@ -511,11 +519,17 @@ function buildPanel(body) {
    * 而不是一个空池子的报错文案。池子是输入之后的结果，顺序上应该在下面。
    */
   const acc = section(TEXT.account.title);
+  const taWrap = el('div', 'ta-wrap');
   const ta = el('textarea', 'txt');
   ta.spellcheck = false;
   ta.placeholder = TEXT.account.placeholder;
   ta.style.minHeight = '76px';
-  acc.appendChild(ta);
+
+  const taAction = el('button', 'ta-action', '📋');
+  taAction.type = 'button';
+  taAction.title = TEXT.account.actions.paste;
+  taWrap.append(ta, taAction);
+  acc.appendChild(taWrap);
 
   const st = el('div', 'msg');
   acc.appendChild(st);
@@ -543,11 +557,8 @@ function buildPanel(body) {
   const qrBtn = el('button', 'act', TEXT.account.actions.qr);
   const saveBtn = el('button', 'act pri', TEXT.account.actions.save);
   const testBtn = el('button', 'act', TEXT.account.actions.test);
-  const clearBtn = el('button', 'act', TEXT.account.actions.clear);
-  const pasteBtn = el('button', 'act', TEXT.account.actions.paste);
-  btns.append(qrBtn, saveBtn, testBtn, pasteBtn, clearBtn);
+  btns.append(qrBtn, saveBtn, testBtn);
   acc.appendChild(btns);
-
   /* ---- 扫码卡片 ---- */
   const qrBox = el('div');
   qrBox.style.cssText =
@@ -756,30 +767,30 @@ function buildPanel(body) {
     const name = el('span', '', r.label || r.uname || ('mid ' + (r.mid || '?')));
     name.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:600';
     head.appendChild(name);
+    const tags = el('div');
+    tags.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0';
+    if (r.isActive) {
+      currentTagNode = mark('on', TEXT.pool.labels.current);
+      tags.appendChild(currentTagNode);
+    }
+    if (r.isBorrow) {
+      tags.appendChild(mark('borrow', TEXT.pool.labels.borrowed));
+    }
+    if (r.stale && r.checkedAt) {
+      const t = mark('muted', TEXT.pool.states.stale);
+      t.title = TEXT.pool.states.staleTip;
+      tags.appendChild(t);
+    }
     const vip = el('span', 'tag ' + (r.vip ? 'vip' : r.checkedAt ? 'plain' : 'muted'),
       r.vip ? TEXT.pool.labels.vip : r.checkedAt ? TEXT.pool.labels.plain : TEXT.pool.labels.unknown);
-    head.appendChild(vip);
+    tags.appendChild(vip);
+    head.appendChild(tags);
     card.appendChild(head);
 
     const meta = el('div');
     meta.style.cssText = 'font-size:10.5px;opacity:.5;margin-top:2px';
     meta.textContent = [r.uname && r.label ? r.uname : '', r.mid ? 'mid=' + r.mid : ''].filter(Boolean).join(' · ');
     card.appendChild(meta);
-
-    const marks = el('div');
-    marks.style.cssText = 'display:flex;gap:4px;margin-top:5px;flex-wrap:wrap';
-    if (r.isActive) {
-      currentTagNode = mark('on', TEXT.pool.labels.current);
-      marks.appendChild(currentTagNode);
-    }
-    if (r.isBorrow) marks.appendChild(mark('borrow', TEXT.pool.labels.borrowed));
-    if (r.stale && r.checkedAt) {
-      const t = mark('muted', TEXT.pool.states.stale);
-      t.title = TEXT.pool.states.staleTip;
-      marks.appendChild(t);
-    }
-    if (marks.childNodes.length) card.appendChild(marks);
-
     const acts = el('div');
     acts.style.cssText = 'display:flex;gap:4px;margin-top:7px;flex-wrap:wrap;align-items:center';
 
@@ -801,13 +812,14 @@ function buildPanel(body) {
     }
     if (o.borrowMode === 'manual' && r.isBorrow) {
       const b = el('button', 'act', TEXT.pool.actions.autoBorrow);
+      b.title = TEXT.pool.states.autoBorrowTip;
       b.addEventListener('click', () => doAutoBorrow());
       acts.appendChild(b);
     }
 
     const mgmt = el('div');
     mgmt.style.cssText = 'display:flex;gap:4px;margin-left:auto';
-    mgmt.appendChild(mkBtn(TEXT.pool.actions.recheck, () => doRecheck(r.id), { title: TEXT.pool.states.rechecking }));
+    mgmt.appendChild(mkBtn(TEXT.pool.actions.recheck, () => doRecheck(r.id), { title: TEXT.pool.states.recheckTip }));
     mgmt.appendChild(mkBtn(TEXT.pool.actions.rename, () => doRename(r.id)));
     mgmt.appendChild(mkBtn(TEXT.pool.actions.remove, () => doForget(r.id)));
     acts.appendChild(mgmt);
@@ -934,9 +946,11 @@ function buildPanel(body) {
     const picked = joinCookie(parsedFields, sortFields([...chosen]));
     if (picked) ta.value = picked;
     renderFields();
+    updateTaAction();
   }
 
   function doParse() {
+    updateTaAction();
     const text = ta.value.trim();
     if (!text) { parsedFields = null; parseBox.style.display = 'none'; return; }
     const { fields, format } = parseCookieText(text);
@@ -972,11 +986,45 @@ function buildPanel(body) {
     else sayInput(TEXT.account.states.ready, 'var(--fg)');
   }
 
+  const updateTaAction = () => {
+    if (ta.value.trim()) {
+      taAction.textContent = '✕';
+      taAction.title = TEXT.account.actions.clear;
+    } else {
+      taAction.textContent = '📋';
+      taAction.title = TEXT.account.actions.paste;
+    }
+  };
+
   ta.addEventListener('input', () => {
+    updateTaAction();
     clearTimeout(ta._t);
     ta._t = setTimeout(doParse, 260);
   });
-  ta.addEventListener('paste', () => setTimeout(doParse, 0));
+  ta.addEventListener('paste', () => setTimeout(() => { updateTaAction(); doParse(); }, 0));
+
+  taAction.addEventListener('click', async () => {
+    if (ta.value.trim()) {
+      ta.value = '';
+      parsedFields = null;
+      chosen = new Set();
+      parseBox.style.display = 'none';
+      sayInput(TEXT.account.states.cleared, 'var(--fg)');
+      updateTaAction();
+      ta.focus();
+    } else {
+      try {
+        const t = await navigator.clipboard.readText();
+        if (t) {
+          ta.value = t;
+          updateTaAction();
+          doParse();
+        } else sayInput(TEXT.account.states.clipboardEmpty, '#f56c6c');
+      } catch {
+        sayInput(TEXT.account.states.clipboardDenied, '#f56c6c');
+      }
+    }
+  });
 
   const runProbe = async (cookie, save) => {
     const msg = save ? say : sayInput;
@@ -1005,6 +1053,7 @@ function buildPanel(body) {
         parsedFields = null;
         chosen = new Set();
         parseBox.style.display = 'none';
+        updateTaAction();
         renderPool();
         // 池子在输入框下方，不主动指过去的话用户会以为「保存了但没反应」
         highlightNew(r.id);
@@ -1026,22 +1075,6 @@ function buildPanel(body) {
 
   saveBtn.addEventListener('click', () => runProbe(ta.value, true));
   testBtn.addEventListener('click', () => runProbe(ta.value || '', false));
-  pasteBtn.addEventListener('click', async () => {
-    try {
-      const t = await navigator.clipboard.readText();
-      if (t) { ta.value = t; doParse(); }
-      else sayInput(TEXT.account.states.clipboardEmpty, '#f56c6c');
-    } catch {
-      sayInput(TEXT.account.states.clipboardDenied, '#f56c6c');
-    }
-  });
-  clearBtn.addEventListener('click', () => {
-    ta.value = '';
-    parsedFields = null;
-    chosen = new Set();
-    parseBox.style.display = 'none';
-    sayInput(TEXT.account.states.cleared, '#00a1d6');
-  });
 
   /* ---- 扫码流程 ---- */
   let qrPollTimer = null;
@@ -1158,7 +1191,7 @@ function buildPanel(body) {
       invalidateAfterSettingsChange();
       renderPool();
       say(r.ok ? '✅ ' + strategyLabel(r.strategy) : '❌ ' + r.reason, r.ok ? '#00a396' : '#f56c6c');
-    })
+    }, { title: TEXT.diag.reprobeTip })
   );
   diag.appendChild(db);
   if (cookieProblem() || stats.lastError) {

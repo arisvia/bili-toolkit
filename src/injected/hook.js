@@ -391,7 +391,36 @@
           delete config.requestConfig.reqHttpPlayUrlInfoScope;
         }
       }
-      return origCreate.apply(this, arguments);
+      var player = origCreate.apply(this, arguments);
+      if (player && hidePlayinfo && !player.__biliReloaded) {
+        player.__biliReloaded = true;
+        setTimeout(function () {
+          try {
+            if (typeof player.reload === 'function') {
+              player.reload();
+            }
+          } catch (e) {}
+
+          var attempts = 0;
+          var unlockTimer = setInterval(function () {
+            attempts++;
+            var v = player.mediaElement || (typeof document !== 'undefined' ? document.querySelector('video') : null);
+            var isBlob = v && v.currentSrc && v.currentSrc.indexOf('blob:') === 0;
+            try {
+              if (typeof player.reloadAccess === 'function') {
+                player.reloadAccess();
+              }
+              if (typeof player.play === 'function') {
+                player.play().catch(function () {});
+              }
+            } catch (e) {}
+            if ((v && !v.paused && isBlob) || attempts >= 10) {
+              clearInterval(unlockTimer);
+            }
+          }, 300);
+        }, 50);
+      }
+      return player;
     };
     return nano;
   }

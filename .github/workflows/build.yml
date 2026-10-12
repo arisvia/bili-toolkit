@@ -71,18 +71,13 @@ jobs:
       - run: npm run build
       - run: npm run release
 
+      - name: 提取版本更新日志
+        run: node tools/extract-changelog.mjs "${{ github.ref_name }}" > dist/release-notes.md
+
       - name: 发布到 Releases
         uses: softprops/action-gh-release@v3
         with:
           files: dist/*.user.js
           make_latest: true
           generate_release_notes: false
-          body: |
-            ### B站 · 会员权益借用 (bili-toolkit) ${{ github.ref_name }}
-
-            - **多账号权益借用**：以主账号浏览互动，用已开通大会员的副账号获取播放地址，解锁 4K/8K/HDR/杜比/高码率与大会员专享内容。
-            - **一键切换与浏览器登录**：支持通过 `GM.cookie` 一键将池内账号应用为当前浏览器登录态，页面自动无缝刷新。
-            - **扫码一键添加入池**：内置本地矢量二维码渲染，手机扫码即可免复制自动归档入池。
-            - **硬件编码偏好重排**：自选 AV1 / HEVC / AVC / 自动最高优先级流。
-
-            **完整变更历史**：https://github.com/arisvia/bili-toolkit/commits/${{ github.ref_name }}
+          body_path: dist/release-notes.md

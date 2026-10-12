@@ -365,6 +365,27 @@ console.log('\n[12] 扫码登录凭据提取与矢量二维码');
   const svg = renderSVG('https://passport.bilibili.com/test');
   check('uqr 输出有效 SVG 矢量代码', svg.startsWith('<svg') && svg.includes('viewBox'), svg.slice(0, 50));
 }
+
+console.log('\n[13] CHANGELOG 版本条目解析');
+{
+  const { extractChangelog } = await import('../tools/extract-changelog.mjs');
+  const sample = [
+    '# Changelog',
+    '',
+    '## [v1.1.0] - 2026-10-12',
+    '',
+    '- 条目 1',
+    '- 条目 2',
+    '',
+    '## [v1.0.5] - 2026-10-10',
+    '',
+    '- 旧条目'
+  ].join('\n');
+  const extracted = extractChangelog('v1.1.0', sample);
+  check('正确提取指定版本的更新说明', extracted.includes('条目 1') && !extracted.includes('旧条目'), extracted);
+  const byCleanVer = extractChangelog('1.1.0', sample);
+  check('支持无 v 前缀匹配', byCleanVer.includes('条目 2'), byCleanVer);
+}
 console.log('');
 if (failed) {
   console.error(`\x1b[31m${failed} 项失败\x1b[0m`);

@@ -130,7 +130,7 @@ export const TEXT = {
       switchTo: '切到此号',
       loginToBrowser: '登录到此号',
       useAsBorrow: '用它借用',
-      autoBorrow: '自动借用',
+      autoBorrow: '恢复自动',
       autoImport: '一键加入池子',
       recheck: '重探',
       rename: '改名',
@@ -165,6 +165,8 @@ export const TEXT = {
       removed: '已从池中移除',
       stale: '待刷新(超24h)',
       staleTip: '本地超过24小时未核验大会员状态，不代表Cookie失效。点击右侧重探即可联网刷新。',
+      autoBorrowTip: '解除手动锁定，恢复为系统自动挑选借用来源',
+      recheckTip: '联网核验该账号的昵称、头像与大会员状态',
       /**
        * 池里记着 activeId，但浏览器实际登录的不是它 —— 多半是用户在别处换了登录。
        * 这种状态下最危险的是界面还在显示「登录中」：用户会以为池子是准的。
@@ -373,8 +375,9 @@ export const TEXT = {
     actions: {
       copyLog: '复制日志',
       clearCache: '清缓存',
-      reprobe: '重探'
-    }
+      reprobe: '重测通道'
+    },
+    reprobeTip: '重新测试网络发送策略并探测可用通道'
   },
 
   /* --- 状态徽标 --- */

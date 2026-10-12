@@ -512,3 +512,26 @@ borrowId  显式指定的借用来源；null = 自动
 而会员状态一天之内几乎不变。
 
 **复验**：`npm test`（`test/accounts.test.mjs` 第 [3]–[6] 组）。
+
+---
+
+## §21 现代番剧播放器 (nanoPlayer) 劫持与 Next.js React 18 客户端水合
+
+**结论**：B 站新版 OGV / 番剧页面采用 Next.js 服务端直出 (SSR)，首屏直接内联试看流数据并挂载至 `window.__playinfo__` 与 `window.__PLAYURL_HYDRATE_DATA__`。
+
+1. **水合数据保护**：React 18 水合读取 `window.__PLAYURL_HYDRATE_DATA__`。若将其篡改为 `undefined` 或阻断访问，会触发 Minified React Error #418 & #423，导致选集列表 (`PaginatedEpList`) 永久卡在骨架屏 (`aria-busy="true"`)。必须保持原对象结构并就地修改试看/会员标志。
+2. **播放器回退真实网络取流**：播放器 `nano.createPlayer(config)` 在首屏直接消费 `config.prefetch.playUrl` 与 `config.requestConfig.reqHttpPlayUrlInfo`，完全绕过 fetch/XHR。必须显式 `delete` 删除此两项属性（不可桩为返回 undefined 的函数，否则引发 `TypeError: Cannot read properties of undefined (reading 'then')`），促使其回退至原生 `this.request` 网络请求并被沙箱代理接管。
+3. **解除首屏 Play Disabled 黑屏**：首屏挂载后，若播放器因未登录初始态进入暂停死锁，在流加载后调用 `player.reload()` 配合 `player.reloadAccess()` 即可刷新 `userStore` 鉴权并恢复播放。
+
+**复验**：`npm test`（`test/hook.test.mjs` 第 [10] 组）。
+
+---
+
+## §22 视觉无障碍可读性与液态玻璃材质分层
+
+**结论**：半透明液态玻璃与双主题在深色/浅色背景下的色彩对比度必须严格遵从 WCAG AA（正文对比度 $\ge 4.5:1$）。
+
+1. **粘性头部材质**：`.head` 采用 `0.72` 半透明背景搭配 `backdrop-filter: blur(20px)`，在极端背景（纯黑背景与纯白弹幕穿越）下测得对比度分别为 7.40:1 与 5.86:1，既消除了实心纯白大补丁的生硬感，又满足 AA 级阅读清晰度。
+2. **多态内嵌操作与紧凑排版**：文本框采用内嵌多态操作图标（内容为空时为粘贴 `📋`，输入后切换为一键清空 `✕`），使得添加账号的操作按钮收敛为单排三连（`[扫码添加]` `[保存并验证]` `[仅验证]`），避免在小屏面板中发生按钮孤立折行。
+
+**复验**：`npm run check:contrast`。

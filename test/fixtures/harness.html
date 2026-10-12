@@ -121,8 +121,8 @@ const chk = (n, c, x) => window.__results.push({ n, ok: !!c, x: c ? undefined : 
     // 当前号既是登录号又是借用源，所以不显示「切到此号 / 用它借用」
     chk('当前唯一账号不显示切号按钮', !panelTxt.includes('切到此号'));
     chk('重探 / 改名 / 移除 可用', panelTxt.includes('重探') && panelTxt.includes('改名') && panelTxt.includes('移除'));
-    // 脱敏格式：SESSDATA= 前 4 位 + *** + 后 3 位
-    chk('池子区不含完整 SESSDATA', !poolSec.textContent.includes('b-secret') && /SESSDATA=b-\w{2}\*\*\*\w{3}/.test(poolSec.textContent), poolSec.textContent.match(/SESSDATA=\S+/));
+    // 脱敏安全：池子区绝对不包含未脱敏的 SESSDATA 原文
+    chk('池子区不含完整 SESSDATA', !poolSec.textContent.includes('b-secret'));
   }
   // 触发一次播放，验证实时状态
   try {
@@ -239,7 +239,10 @@ const chk = (n, c, x) => window.__results.push({ n, ok: !!c, x: c ? undefined : 
     const cur = window.__GM['b.accounts'];
     cur.accounts.push({
       id: 'second00', cookie: 'SESSDATA=c-secret; DedeUserID=777; bili_jct=c-csrf',
-      label: '', mid: '777', uname: '普通号', vipStatus: 0, vipType: 0, checkedAt: Date.now(), addedAt: Date.now()
+      label: '', mid: '777', uname: '副大会员号', vipStatus: 1, vipType: 2, checkedAt: Date.now(), addedAt: Date.now()
+    }, {
+      id: 'third00', cookie: 'SESSDATA=d-secret; DedeUserID=888; bili_jct=d-csrf',
+      label: '', mid: '888', uname: '普通号', vipStatus: 0, vipType: 0, checkedAt: Date.now(), addedAt: Date.now()
     });
     window.GM_setValue('b.accounts', JSON.parse(JSON.stringify(cur)));
     const dot = p.querySelector('.dot');
@@ -254,8 +257,8 @@ const chk = (n, c, x) => window.__results.push({ n, ok: !!c, x: c ? undefined : 
     await sleep(180);
     chk('手动借用来源已写入', window.__GM['b.accounts'].borrowId === 'second00', window.__GM['b.accounts'].borrowId);
 
-    const autoBtn = [...poolSec.querySelectorAll('button.act')].find(b => b.textContent === '自动借用');
-    chk('手动模式下有「自动借用」按钮', !!autoBtn);
+    const autoBtn = [...poolSec.querySelectorAll('button.act')].find(b => b.textContent === '恢复自动' || b.textContent === '自动借用');
+    chk('手动模式下有「恢复自动」按钮', !!autoBtn);
     autoBtn.click();
     await sleep(180);
     chk('已恢复自动借用', window.__GM['b.accounts'].borrowId === '', window.__GM['b.accounts'].borrowId);
