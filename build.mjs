@@ -51,9 +51,11 @@ export const meta = `// ==UserScript==
 // @grant        GM_notification
 // @grant        GM_cookie
 // @grant        GM.cookie
+// @connect      api.bilibili.com
 // @connect      api.live.bilibili.com
 // @connect      passport.bilibili.com
 // @connect      www.bilibili.com
+// @connect      bilibili.com
 // ==/UserScript==
 `;
 
@@ -93,6 +95,7 @@ function checkMeta() {
   for (const k of required) {
     if (!meta.includes('// ' + k)) fail(`meta 缺少 // ${k}`);
   }
+  if (!meta.includes('// @connect      api.bilibili.com')) fail('meta 必须包含 // @connect api.bilibili.com');
   if (!meta.includes('@version      ' + VERSION)) fail('meta 的 @version 与 meta.js 的 VERSION 不一致');
   if (!meta.includes('// @run-at       document-start')) {
     fail('必须 @run-at document-start，否则抢不到播放器的首个 playurl 请求');
