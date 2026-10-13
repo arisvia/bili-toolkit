@@ -45,6 +45,25 @@ export const ENDPOINTS = [
     kind: 'video',
     wbi: 'if-present'
   },
+  {
+    id: 'pgc-playurl-v2-post',
+    host: 'api.bilibili.com',
+    method: 'POST',
+    path: '/pgc/player/web/v2/playurl',
+    mode: 'proxy',
+    kind: 'ogv',
+    csrf: true,
+    wbi: 'if-present'
+  },
+  {
+    id: 'pugv-playurl',
+    host: 'api.bilibili.com',
+    method: 'GET',
+    path: '/pugv/player/web/playurl',
+    mode: 'proxy',
+    kind: 'video',
+    wbi: 'if-present'
+  },
 
   // ---------- 番剧 / OGV ----------
   {

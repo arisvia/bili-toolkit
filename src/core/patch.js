@@ -51,8 +51,11 @@ export function patchVipFlags(root) {
     if (typeof o.is_preview === 'number' && o.is_preview !== 0) o.is_preview = 0;
     if (o.has_paid === false) o.has_paid = true;
     if (o.real_vip === false) o.real_vip = true;
-    if (o.play_detail === 'PLAY_PREVIEW') o.play_detail = '';
+    if (o.play_detail === 'PLAY_PREVIEW' || o.play_detail === 'PLAY_NONE') o.play_detail = 'PLAY_WHOLE';
     if (typeof o.pay_check === 'number' && o.pay_check !== 1) o.pay_check = 1;
+    if (o.play_video_type !== undefined || o.video_info || o.view_info) {
+      o.play_video_type = 'whole';
+    }
     for (const k of VIP_OBJ_KEYS) {
       if (looksLikeVipObject(o[k])) patchVipObject(o[k]);
     }

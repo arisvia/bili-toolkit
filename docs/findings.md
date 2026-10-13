@@ -521,7 +521,9 @@ borrowId  显式指定的借用来源；null = 自动
 
 1. **水合数据保护**：React 18 水合读取 `window.__PLAYURL_HYDRATE_DATA__`。若将其篡改为 `undefined` 或阻断访问，会触发 Minified React Error #418 & #423，导致选集列表 (`PaginatedEpList`) 永久卡在骨架屏 (`aria-busy="true"`)。必须保持原对象结构并就地修改试看/会员标志。
 2. **播放器回退真实网络取流**：播放器 `nano.createPlayer(config)` 在首屏直接消费 `config.prefetch.playUrl` 与 `config.requestConfig.reqHttpPlayUrlInfo`，完全绕过 fetch/XHR。必须显式 `delete` 删除此两项属性（不可桩为返回 undefined 的函数，否则引发 `TypeError: Cannot read properties of undefined (reading 'then')`），促使其回退至原生 `this.request` 网络请求并被沙箱代理接管。
-3. **解除首屏 Play Disabled 黑屏**：首屏挂载后，若播放器因未登录初始态进入暂停死锁，在流加载后调用 `player.reload()` 配合 `player.reloadAccess()` 即可刷新 `userStore` 鉴权并恢复播放。
+3. **解除未登录 Play Disabled 黑屏与拦截循环 reload()**：
+   - **黑屏阻断源头**：B 站番剧 React 组件在监听 `Player_PlayUrl_Done` 时执行 `checkToBlock(result)`：未登录下 `result.play_video_type` 默认为 `_.None`，组件会触发 `this.block()`，注入 `toggleFeature({ play: true, pause: true, seek: true })` 并创建 `#big-block-panel` 阻断遮罩。在响应补丁与水合数据中将 `play_video_type` 补齐为 `'whole'`、`play_detail` 补齐为 `'PLAY_WHOLE'`，并监听 `player_block` 事件主动拆除遮罩与恢复 `toggleFeature({ play: false })`，黑屏死锁即可在首屏直接解开。
+   - **反复 reload 的元凶**：番剧 React 页面注册了 `r.on(window.nano.EventType.Player_Access_Changed, () => window.location.reload())`。此前调用 `player.reloadAccess()` 会触发播放器发射该事件，进而导致**整个浏览器页面被无脑调用 location.reload()**，陷入多次刷新循环。必须在 `player.on` 中拦截阻断 `Player_Access_Changed` 刷新监听器的挂载，并彻底拔除多余的 `reloadAccess()` 调用，才能做到既秒解黑屏、又 0 次重复跳转。
 
 **复验**：`npm test`（`test/hook.test.mjs` 第 [10] 组）。
 
@@ -535,3 +537,43 @@ borrowId  显式指定的借用来源；null = 自动
 2. **多态内嵌操作与紧凑排版**：文本框采用内嵌多态操作图标（内容为空时为粘贴 `📋`，输入后切换为一键清空 `✕`），使得添加账号的操作按钮收敛为单排三连（`[扫码添加]` `[保存并验证]` `[仅验证]`），避免在小屏面板中发生按钮孤立折行。
 
 **复验**：`npm run check:contrast`。
+
+---
+
+## §23 Cookie 持久化生命周期与 Session Cookie 掉登录态实测
+
+**结论**：用户脚本通过管理器的 `GM_cookie.set` / `GM.cookie.set` 或 `document.cookie` 改写浏览器登录态时，若未显式指定 `expirationDate` 或 `Max-Age`，浏览器默认将其视为**会话 Cookie（Session Cookie）**。
+
+1. **掉登录态的根本原因**：
+   - 浏览器改写登录态时，若未设置 `expirationDate`，写入浏览器的凭据将全数被标记为 Session Cookie；
+   - 浏览器一旦完全退出关闭，内存中的 Session Cookie 被全部清空，下次打开 B 站自然回到「未登录」；
+   - 脚本的账号池数据保存在油猴管理器的持久化存储中（`GM_setValue`），因此点击「切换此号」又能把凭证重新写回。
+2. **持久有效期补全**：
+   - 写入身份字段时显式设定 180 天持久有效期（`DEFAULT_TTL_SEC = 180 * 24 * 3600`，`details.expirationDate = now + 180 * 86400`，`Max-Age=15552000`）；
+   - 即使本地 TTL 长于服务端真实会话有效期也完全安全：因为服务端一旦判定 SESSDATA 过期或被退出，会直接返回 `code=-101` 拒接请求，本地高估有效期无副作用。
+3. **为什么不搞粗暴的开机自愈写回**：
+   - 若在脚本初始化时检测到未登录就强制把池内账号注入浏览器，会导致用户在 B 站主动点击「退出登录」后，页面一刷新又被脚本强行登录回去，造成“无法退出登录”的死循环故障。
+   - 遵从 RFC 6265 标准，让 Cookie 自带持久化寿命，交由浏览器原生管理，是最安全标准的设计。
+
+**复验**：`npm test`（`test/accounts.test.mjs` 第 [10] 组）。
+
+---
+
+## §24 B 站生产环境退出登录与软登出机制设计
+
+**结论**：用户在 B 站顶栏点击「退出登录」时，现代前端会向 B 站 Passport 服务器发送退出注销请求。
+
+1. **生产环境调用链路实测逆向**：
+   - 源码提取自 B 站生产底座脚本（`laputa-home/assets/index-12fc55c2.js`）的 `window.__BiliUser__.logout()`；
+   - 目标端点：`POST //passport.bilibili.com/login/exit/v2`，表单载荷携带 `biliCSRF`（即 `bili_jct`）；
+   - 底层传输：原生 `new XMLHttpRequest()`；
+   - 成功判定契约：前端严格校验响应体 `M.status === true`，随后执行 `E._setBiliLoginState()` 并跳转至 `M.data.redirectUrl`；
+   - 端点探测试验：该端点真实存在，未携带鉴权发起 POST 时返回 HTTP 200 与 `{"code":-101,"data":null,"message":"账号未登录"}`。
+2. **软登出保活机制设计 (Soft Logout)**：
+   - 主世界钩子精准匹配发往该端点的 XHR 与 fetch POST 请求，**阻断该请求向 B 站服务端发送**；
+   - 沙箱通过特权 `GM_cookie.delete` 清空当前会话的本地持久化身份 Cookie（`SESSDATA` / `bili_jct` / `DedeUserID` / `sid`），不触碰设备级指纹；
+   - 向页面回传模拟的 `{ code: 0, status: true, data: { redirectUrl: "https://www.bilibili.com" }, message: "" }`，页面前端本地会话干净重置为未登录态；
+   - `[机制推断]`：由于服务端从未收到退出注销包，理论上服务端 Session 维持原有时效，账号池内保存的对应凭据可免扫码重新切回登录。
+3. **防御性诚实回退实测**：
+   - 当脚本管理器缺少 Cookie 删除特权（`level === 0`）时，软登出如实返回失败并触发 `passthrough: true`，放行原生退出请求让页面自己处理，绝不虚假伪造退出成功。
+**复验**：`npm test`（`test/hook.test.mjs` 第 [11] 组，`test/accounts.test.mjs` 第 [19] 组）。

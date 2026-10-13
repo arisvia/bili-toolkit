@@ -69,7 +69,7 @@ function makeEnv(cfgOverrides = {}, responder) {
       setTimeout(() => dispatch({ type: 'welcome', token: TOKEN, cfg: CFG }), 0);
       return;
     }
-    if (msg.type === 'req') {
+    if (msg.type === 'req' || msg.type === 'logout') {
       state.sent.push(msg);
       const res = responder ? responder(msg) : { passthrough: true };
       if (!res) return; // 模拟沙箱完全没有回应
@@ -358,6 +358,7 @@ console.log('\n[10] nanoPlayer (现代番剧播放器) 劫持与流地址接管'
   const win = env.win;
   win.__PLAYURL_HYDRATE_DATA__ = { result: { video_info: { is_preview: 1 } } };
   check('hydrate 数据保留对象且试看字段被 patch', win.__PLAYURL_HYDRATE_DATA__ && win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 0);
+  check('hydrate 数据被补充完整 play_video_type', win.__PLAYURL_HYDRATE_DATA__.result.play_video_type === 'whole');
   // 模拟真实页面初始化 nanoPlayer
   const dummyNano = {
     createPlayer: (cfg) => ({ cfg })
@@ -376,6 +377,58 @@ console.log('\n[10] nanoPlayer (现代番剧播放器) 劫持与流地址接管'
   check('reqHttpPlayUrlInfoScope 被删除', created.cfg.requestConfig.reqHttpPlayUrlInfoScope === undefined);
   await win.fetch('https://api.bilibili.com/pgc/player/web/v2/playurl?ep_id=766336');
   check('回落请求被接管转交沙箱', sandboxedUrl && sandboxedUrl.includes('ep_id=766336'), sandboxedUrl);
+  win.__teardown();
+}
+
+console.log('[11] 软登出凭据保活拦截');
+{
+  const { win, state } = makeEnv({}, (msg) => {
+    if (msg.type === 'logout') {
+      return {
+        status: 200,
+        statusText: 'OK',
+        headersRaw: 'content-type: application/json; charset=utf-8\r\n',
+        body: JSON.stringify({
+          code: 0,
+          status: true,
+          data: { redirectUrl: 'https://www.bilibili.com' },
+          message: ''
+        })
+      };
+    }
+    return { passthrough: true };
+  });
+
+  // 1. XHR POST passport.bilibili.com/login/exit/v2
+  const xhr = new win.XMLHttpRequest();
+  let xhrRes = null;
+  xhr.onload = () => {
+    xhrRes = JSON.parse(xhr.responseText);
+  };
+  xhr.open('POST', '//passport.bilibili.com/login/exit/v2');
+  xhr.setRequestHeader('content-type', 'application/x-www-form-urlencoded');
+  xhr.send('biliCSRF=test_csrf_token');
+
+  await new Promise((r) => setTimeout(r, 20));
+
+  check('XHR 退出请求未向真实网络发送', !state.fetched.some((f) => f.url.includes('/login/exit/v2')));
+  check('XHR 退出请求被转交沙箱', state.sent.some((s) => s.type === 'logout' && s.url.includes('/login/exit/v2')));
+  check('XHR 收到伪造的成功响应 status: true', xhrRes && xhrRes.status === true && xhrRes.code === 0, xhrRes);
+
+  // 2. Fetch POST passport.bilibili.com/login/exit/v2
+  const fetchResp = await win.fetch('https://passport.bilibili.com/login/exit/v2', {
+    method: 'POST',
+    body: 'biliCSRF=test_csrf_token'
+  });
+  const fetchJson = await fetchResp.json();
+  check('Fetch 退出请求收到伪造的成功响应', fetchJson && fetchJson.status === true && fetchJson.code === 0, fetchJson);
+
+  // 3. 非退出请求（如二维码生成）不被拦截
+  const qrXhr = new win.XMLHttpRequest();
+  qrXhr.open('GET', 'https://passport.bilibili.com/x/passport-login/web/qrcode/generate');
+  qrXhr.send();
+  check('非退出请求未被拦截并正常放行', state.fetched.some((f) => f.url.includes('/qrcode/generate')));
+
   win.__teardown();
 }
 

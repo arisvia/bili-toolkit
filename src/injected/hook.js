@@ -29,6 +29,7 @@
   var hidePlayinfo = !!CFG.hidePlayinfo;
   var patchUi = !!CFG.patchUi;
   var doPrefetch = !!CFG.prefetch;
+  var softLogout = CFG.softLogout !== false;
   var region = CFG.region || 'off';
 
   // 钩子是由沙箱注入的，沙箱必然存在，因此初始就认为通道可用。
@@ -85,6 +86,20 @@
     return hit(u, LOCAL_ENTRIES, null);
   }
 
+  function isLogoutTarget(u, method) {
+    var parsed;
+    try {
+      parsed = new URL(u);
+    } catch (e) {
+      return false;
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    if (parsed.hostname !== 'passport.bilibili.com') return false;
+    if (parsed.pathname !== '/login/exit/v2') return false;
+    if (method && String(method).toUpperCase() !== 'POST') return false;
+    return true;
+  }
+
   /* ---------------- 与沙箱通信 ---------------- */
 
   function post(msg) {
@@ -111,7 +126,7 @@
         clearTimeout(timer);
         resolve(res);
       };
-      payload.type = 'req';
+      payload.type = payload.type || 'req';
       payload.id = id;
       payload.token = token;
       // 转交成功即计数。自检要看的是「拦截链路通不通」，不是沙箱答得快不快。
@@ -157,6 +172,7 @@
       playinfoHidden: playinfoHooked && hidden,
       // 借用总开关是否要求隐藏 playinfo。false 时「未隐藏」是正常状态，不是故障。
       hidePlayinfo: hidePlayinfo,
+      softLogout: softLogout,
       sandboxAlive: sandboxAlive
     };
   }
@@ -166,6 +182,7 @@
     if (typeof cfg.hidePlayinfo === 'boolean') hidePlayinfo = cfg.hidePlayinfo;
     if (typeof cfg.patchUi === 'boolean') patchUi = cfg.patchUi;
     if (typeof cfg.prefetch === 'boolean') doPrefetch = cfg.prefetch;
+    if (typeof cfg.softLogout === 'boolean') softLogout = cfg.softLogout;
     if (typeof cfg.region === 'string') region = cfg.region;
     updateSsHooks();
   }
@@ -392,33 +409,79 @@
         }
       }
       var player = origCreate.apply(this, arguments);
-      if (player && hidePlayinfo && !player.__biliReloaded) {
-        player.__biliReloaded = true;
-        setTimeout(function () {
-          try {
-            if (typeof player.reload === 'function') {
-              player.reload();
+      if (player && hidePlayinfo) {
+        var origOn = player.on;
+        if (typeof origOn === 'function') {
+          player.on = function (event, handler) {
+            if (
+              event === 'Player_Access_Changed' ||
+              event === 'player_access_changed' ||
+              (window.nano && window.nano.EventType && event === window.nano.EventType.Player_Access_Changed)
+            ) {
+              return this;
             }
-          } catch (e) {}
+            return origOn.apply(this, arguments);
+          };
+        }
 
-          var attempts = 0;
-          var unlockTimer = setInterval(function () {
-            attempts++;
-            var v = player.mediaElement || (typeof document !== 'undefined' ? document.querySelector('video') : null);
-            var isBlob = v && v.currentSrc && v.currentSrc.indexOf('blob:') === 0;
+        if (typeof origOn === 'function') {
+          try {
+            origOn.call(player, 'player_block', function () {
+              try {
+                if (typeof player.toggleFeature === 'function') {
+                  player.toggleFeature({ play: false, pause: false, seek: false, shortcut: false });
+                }
+                var bp = typeof document !== 'undefined' ? document.getElementById('big-block-panel') : null;
+                if (bp) bp.remove();
+                if (typeof player.play === 'function') {
+                  player.play().catch(function () {});
+                }
+              } catch (e) {}
+            });
+          } catch (e) {}
+        }
+
+        if (!player.__biliReloaded) {
+          player.__biliReloaded = true;
+          setTimeout(function () {
             try {
-              if (typeof player.reloadAccess === 'function') {
-                player.reloadAccess();
+              if (typeof player.toggleFeature === 'function') {
+                player.toggleFeature({ play: false, pause: false, seek: false, shortcut: false });
               }
-              if (typeof player.play === 'function') {
-                player.play().catch(function () {});
+              if (typeof player.reload === 'function') {
+                player.reload();
               }
             } catch (e) {}
-            if ((v && !v.paused && isBlob) || attempts >= 10) {
-              clearInterval(unlockTimer);
-            }
-          }, 300);
-        }, 50);
+
+            var attempts = 0;
+            var unlockTimer = setInterval(function () {
+              attempts++;
+              var bp = typeof document !== 'undefined' ? document.getElementById('big-block-panel') : null;
+              if (bp) bp.remove();
+
+              try {
+                if (typeof player.toggleFeature === 'function') {
+                  player.toggleFeature({ play: false, pause: false, seek: false, shortcut: false });
+                }
+              } catch (e) {}
+
+              var v = player.mediaElement || (typeof document !== 'undefined' ? document.querySelector('video') : null);
+              var isBlob = v && v.currentSrc && v.currentSrc.indexOf('blob:') === 0;
+
+              if (v && v.paused) {
+                try {
+                  if (typeof player.play === 'function') {
+                    player.play().catch(function () {});
+                  }
+                } catch (e) {}
+              }
+
+              if ((v && !v.paused && isBlob) || attempts >= 15) {
+                clearInterval(unlockTimer);
+              }
+            }, 300);
+          }, 50);
+        }
       }
       return player;
     };
@@ -527,6 +590,23 @@
     var st = this.__biliVip;
     if (!st || st.handled) return origSend.apply(this, arguments);
 
+    if (softLogout && isLogoutTarget(st.url, st.method)) {
+      st.handled = true;
+      var self0 = this;
+      callSandbox({
+        type: 'logout',
+        method: st.method,
+        url: st.url
+      }).then(function (res) {
+        if (res && !res.passthrough && res.body !== undefined) {
+          emulateXhr(self0, res, st.url);
+          return;
+        }
+        origSend.call(self0, body);
+      });
+      return;
+    }
+
     if (isSandboxTarget(st.url, st.method)) {
       st.handled = true;
       var self = this;
@@ -608,8 +688,11 @@
     if (typeof root.is_preview === 'number' && root.is_preview !== 0) root.is_preview = 0;
     if (root.has_paid === false) root.has_paid = true;
     if (root.real_vip === false) root.real_vip = true;
-    if (root.play_detail === 'PLAY_PREVIEW') root.play_detail = '';
+    if (root.play_detail === 'PLAY_PREVIEW' || root.play_detail === 'PLAY_NONE') root.play_detail = 'PLAY_WHOLE';
     if (typeof root.pay_check === 'number' && root.pay_check !== 1) root.pay_check = 1;
+    if (root.play_video_type !== undefined || root.video_info || root.view_info) {
+      root.play_video_type = 'whole';
+    }
     if (looksLikeVipObject(root.vip)) patchVipObject(root.vip);
     if (looksLikeVipObject(root.vip_info)) patchVipObject(root.vip_info);
     for (var k in root) {
@@ -668,6 +751,17 @@
     var args = arguments;
     var method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
     var url = toAbsolute(typeof input === 'string' ? input : (input && (input.url || input.href)) || '');
+
+    if (softLogout && isLogoutTarget(url, method)) {
+      return callSandbox({
+        type: 'logout',
+        method: method,
+        url: url
+      }).then(function (res) {
+        if (res && !res.passthrough && res.body !== undefined) return makeResponse(res, url);
+        return origFetch.apply(self, args);
+      });
+    }
 
     if (isSandboxTarget(url, method)) {
       return callSandbox({

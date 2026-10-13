@@ -40,7 +40,7 @@ import {
   resolveBorrow,
   markProbed
 } from './accounts.js';
-import { applyAccount, staleKeysFor, presentIdentityKeys, canWriteCookies } from './browser-cookie.js';
+import { applyAccount, staleKeysFor, presentIdentityKeys, canWriteCookies, clearBrowserIdentityCookies } from './browser-cookie.js';
 
 const BROWSER_ID_TTL_MS = 30 * 1000;
 let browserWhoCache = { at: 0, who: { mid: '', uname: '', vipStatus: 0 } };
@@ -201,6 +201,21 @@ export async function switchLoginTo(id) {
   return { ok: true, reason: applied.reason, needReload: true, stale: applied.removed, written: applied.written };
 }
 
+/**
+ * 软登出：清空浏览器本地持久化身份 Cookie，保留池内凭据与服务端会话。
+ */
+export async function softLogout() {
+  const result = await clearBrowserIdentityCookies();
+  if (!result.ok) {
+    return { ok: false, level: result.level, removed: result.removed || [], reason: result.reason || 'failed' };
+  }
+  browserWhoCache = { at: Date.now(), who: { mid: '', uname: '', vipStatus: 0 } };
+  afterSwitch();
+  syncLegacyMirror();
+  log.info(TEXT.notify.softLogoutCleaned, result.removed);
+  return { ok: true, level: result.level, removed: result.removed };
+}
+
 /* ------------------------------------------------------------------ *
  * 删除与重命名
  * ------------------------------------------------------------------ */
@@ -236,6 +251,8 @@ export function overview() {
   const active = activeAccount();
   const borrow = resolveBorrow();
   const borrowAcc = borrow.account;
+  const cookieMid = typeof document !== 'undefined' ? (parseCookie(document.cookie || '').DedeUserID || '') : '';
+  const currentBrowserMid = cookieMid || browserWhoCache.who.mid || '';
   const rows = accounts.map((a) => ({
     id: a.id,
     label: a.label,
@@ -245,7 +262,7 @@ export function overview() {
     vip: a.vipStatus === 1,
     checkedAt: a.checkedAt,
     stale: needsProbe(a),
-    isActive: !!active && a.id === active.id,
+    isActive: !!currentBrowserMid && !!a.mid && a.mid === currentBrowserMid,
     isBorrow: !!borrowAcc && a.id === borrowAcc.id
   }));
   return {
@@ -259,7 +276,7 @@ export function overview() {
     canWrite: canWriteCookies(),
     hasCsrf: !!getBCsrf(),
     effectiveMasked: hasCookie() ? maskSummary() : '',
-    browserMid: browserWhoCache.who.mid || ''
+    browserMid: currentBrowserMid
   };
 }
 
@@ -353,7 +370,7 @@ export function renamePoolAccount(id, label) {
 export async function saveAndApplyScannedAccount(cookieString) {
   const r = await saveAccount(cookieString);
   if (!r.ok) return r;
-  await switchLoginTo(r.id);
+  const sw = await switchLoginTo(r.id);
   invalidateBrowserWho();
-  return r;
+  return { ...r, switch: sw };
 }

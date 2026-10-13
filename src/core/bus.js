@@ -8,6 +8,7 @@
 import { NS } from '../config.js';
 import { handleRequest, prefetch } from './proxy.js';
 import { log, stats } from './log.js';
+import { softLogout } from './switcher.js';
 
 let channelToken = '';
 
@@ -79,6 +80,34 @@ export function startBus(getConfig) {
       }
       case 'pong': {
         hookSelfCheck = d.state || hookSelfCheck;
+        break;
+      }
+      case 'logout': {
+        const id = d.id;
+        if (id === undefined || id === null) return;
+        softLogout()
+          .then((res) => {
+            if (!res.ok) {
+              // 无法删除持久 Cookie 时绝不能伪造成功，放行让原生退出流程处理
+              respond(id, { passthrough: true });
+              return;
+            }
+            respond(id, {
+              status: 200,
+              statusText: 'OK',
+              headersRaw: 'content-type: application/json; charset=utf-8\r\n',
+              body: JSON.stringify({
+                code: 0,
+                status: true,
+                data: { redirectUrl: 'https://www.bilibili.com' },
+                message: ''
+              })
+            });
+          })
+          .catch((err) => {
+            log.warn('软登出失败', err);
+            respond(id, { passthrough: true });
+          });
         break;
       }
       case 'req': {

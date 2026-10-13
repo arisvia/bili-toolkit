@@ -18,6 +18,7 @@ export const HOSTS = ['api.bilibili.com', 'api.live.bilibili.com'];
 export const DEFAULTS = {
   enabled: true, // 权益借用总开关
   patchUi: true, // 把页面上的大会员界面状态一并伪装（仅显示，身份仍是 A）
+  softLogout: true, // 软登出凭据保活（拦截退出登录，仅清空本地 Cookie）
   prefetch: true, // 进入视频页时预热 playurl 缓存
   region: 'off', // 区域形态：off | hkmo | tw | cn（详见 core/region.js 的诚实边界）
   cacheTtlMs: 120000, // playurl 结果缓存时长（2 分钟）

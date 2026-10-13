@@ -21,6 +21,7 @@ export function buildHookConfig(token) {
     hidePlayinfo: store.isEnabled() && hasCookie(),
     patchUi: store.isPatchUi(),
     prefetch: store.isPrefetch(),
+    softLogout: store.isSoftLogout(),
     region: store.getRegion()
   };
 }
@@ -31,6 +32,7 @@ export function liveConfig() {
     hidePlayinfo: store.isEnabled() && hasCookie(),
     patchUi: store.isPatchUi(),
     prefetch: store.isPrefetch(),
+    softLogout: store.isSoftLogout(),
     region: store.getRegion()
   };
 }

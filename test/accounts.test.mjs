@@ -63,7 +63,12 @@ function makeContext(seed = {}) {
     GM: {
       cookie: {
         set(details, cb) {
-          browserCookies.set(details.name, { value: details.value, domain: details.domain, httpOnly: !!details.httpOnly });
+          browserCookies.set(details.name, {
+            value: details.value,
+            domain: details.domain,
+            httpOnly: !!details.httpOnly,
+            expirationDate: details.expirationDate
+          });
           if (cb) cb();
         },
         delete(details, cb) {
@@ -300,6 +305,9 @@ console.log('\n[10] 切换登录态：SESSDATA / bili_jct / sid 一起换');
   check('SESSDATA 保持 HttpOnly', bc.get('SESSDATA').httpOnly === true);
   check('bili_jct 保持 HttpOnly', bc.get('bili_jct').httpOnly === true);
   check('DedeUserID 不该被标 HttpOnly（站点本来就不是）', bc.get('DedeUserID').httpOnly !== true);
+  check('SESSDATA 包含持久有效期(非 Session Cookie)', bc.get('SESSDATA').expirationDate > Math.floor(Date.now() / 1000));
+  check('bili_jct 包含持久有效期(非 Session Cookie)', bc.get('bili_jct').expirationDate > Math.floor(Date.now() / 1000));
+  check('DedeUserID 包含持久有效期(非 Session Cookie)', bc.get('DedeUserID').expirationDate > Math.floor(Date.now() / 1000));
   // B_COOKIE 自带 sid，所以不该进删除名单；下面换到没有 sid 的 C 才验证删除路径
   check('目标账号有的字段不进删除名单', !r.stale.includes('sid') && !r.stale.includes('bili_jct'), r.stale);
 
@@ -612,6 +620,54 @@ console.log('\n[18] overview 与代理取值同源');
   check('csrf 取的是 B 的', sess.getBCsrf() === 'b-csrf', sess.getBCsrf());
   check('指纹随借用源变化', sess.fingerprint() === accApi.fingerprintId(B_COOKIE));
   void accApi;
+}
+
+console.log('\n[19] 软登出：仅清空浏览器本地会话，保留账号池凭据');
+{
+  const ctx = makeContext(
+    seedPool(
+      [
+        acc('idA', A_COOKIE, { mid: '111', uname: 'A', vipStatus: 0 }),
+        acc('idB', B_COOKIE, { mid: '222', uname: 'B', vipStatus: 1 })
+      ],
+      { activeId: 'idA' }
+    )
+  );
+  ctx.__browserCookies.set('SESSDATA', { value: 'a-sess', domain: '.bilibili.com' });
+  ctx.__browserCookies.set('bili_jct', { value: 'a-csrf', domain: '.bilibili.com' });
+  ctx.__browserCookies.set('DedeUserID', { value: '111', domain: '.bilibili.com' });
+  ctx.__browserCookies.set('sid', { value: 'a-sid', domain: '.bilibili.com' });
+
+  const accApi = await load('src/core/accounts.js', ctx);
+  const sw = await load('src/core/switcher.js', ctx);
+
+  check('软登出前 activeAccount 存在', accApi.activeAccount()?.id === 'idA');
+  const res = await sw.softLogout();
+  check('软登出返回 ok', res.ok === true);
+  check('浏览器 SESSDATA 已被清理', !ctx.__browserCookies.has('SESSDATA'));
+  check('浏览器 bili_jct 已被清理', !ctx.__browserCookies.has('bili_jct'));
+  check('浏览器 DedeUserID 已被清理', !ctx.__browserCookies.has('DedeUserID'));
+  check('浏览器 sid 已被清理', !ctx.__browserCookies.has('sid'));
+  const oAfter = await sw.overviewAsync();
+  check('软登出后浏览器身份处于未登录访客态 (who.mid 为空)', oAfter.browserMid === '');
+  check('账号池仍然完整保留 2 个账号', accApi.list().length === 2);
+  check('被退出的账号凭据完好无损', accApi.byId('idA')?.cookie === A_COOKIE);
+  check('副号凭据完好无损', accApi.byId('idB')?.cookie === B_COOKIE);
+  // 随时可以一键重新登回
+  const relog = await sw.switchLoginTo('idA');
+  check('软登出后可秒级重新登回', relog.ok === true);
+  check('登回后浏览器 SESSDATA 恢复', ctx.__browserCookies.get('SESSDATA')?.value === 'a-sess');
+
+  // 管理器无 Cookie 写入/删除特权时：软登出如实返回失败，绝不伪造成功
+  const ctxNoPriv = makeContext(
+    seedPool([acc('idA', A_COOKIE, { mid: '111' })], { activeId: 'idA' })
+  );
+  delete ctxNoPriv.GM_cookie;
+  delete ctxNoPriv.GM;
+  delete ctxNoPriv.GM_setCookie;
+  const swNoPriv = await load('src/core/switcher.js', ctxNoPriv);
+  const failRes = await swNoPriv.softLogout();
+  check('不支持删 Cookie 的管理器如实返回失败', failRes.ok === false);
 }
 
 console.log('');

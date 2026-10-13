@@ -167,6 +167,15 @@ export async function applyAccount(cookieString, staleKeys = []) {
   const written = [];
   const errors = [];
 
+  // 计算持久有效期：B 站官方凭证生命周期通常为 180 天。
+  // 若 Cookie 写入时不带 expirationDate / Max-Age，浏览器会默认将其标记为 Session Cookie，
+  // 导致用户关闭浏览器后再打开时会话凭据被浏览器全部清空并变成未登录状态。
+  const nowSec = Math.floor(Date.now() / 1000);
+  const DEFAULT_TTL_SEC = 180 * 24 * 3600; // 180 天持久有效期 (秒)
+  const exp = nowSec + DEFAULT_TTL_SEC;
+  const maxAge = DEFAULT_TTL_SEC;
+  const expiresUtc = new Date(exp * 1000).toUTCString();
+
   for (const key of IDENTITY_COOKIE_KEYS) {
     const value = target[key];
     if (value === undefined) continue; // 目标账号没有这个字段，不该凭空造一个
@@ -178,18 +187,26 @@ export async function applyAccount(cookieString, staleKeys = []) {
           value,
           domain: COOKIE_DOMAIN,
           path: COOKIE_PATH,
-          secure: true
+          secure: true,
+          expirationDate: exp
         };
         if (HTTP_ONLY_COOKIE_KEYS.has(key)) details.httpOnly = true;
         await gmCookieSet(details);
       } else {
-        const parts = [`${key}=${value}`, `path=${COOKIE_PATH}`, `domain=${COOKIE_DOMAIN}`, 'secure'];
+        const parts = [
+          `${key}=${value}`,
+          `path=${COOKIE_PATH}`,
+          `domain=${COOKIE_DOMAIN}`,
+          'secure',
+          `Max-Age=${maxAge}`,
+          `Expires=${expiresUtc}`
+        ];
         if (HTTP_ONLY_COOKIE_KEYS.has(key)) parts.push('httponly');
-        await gmSetCookie(parts.join('; '), { domain: COOKIE_DOMAIN, path: COOKIE_PATH });
+        await gmSetCookie(parts.join('; '), { domain: COOKIE_DOMAIN, path: COOKIE_PATH, expirationDate: exp });
       }
       if (!HTTP_ONLY_COOKIE_KEYS.has(key) && typeof document !== 'undefined' && typeof document.cookie === 'string') {
         try {
-          document.cookie = `${key}=${value}; path=${COOKIE_PATH}; domain=${COOKIE_DOMAIN}; secure`;
+          document.cookie = `${key}=${value}; path=${COOKIE_PATH}; domain=${COOKIE_DOMAIN}; max-age=${maxAge}; expires=${expiresUtc}; secure`;
         } catch (e) {}
       }
       written.push(key);
@@ -240,6 +257,45 @@ export async function applyAccount(cookieString, staleKeys = []) {
     removed,
     reason: errors.length ? TEXT.notify.fieldsFailed + errors.join('；') : ''
   };
+}
+
+/**
+ * 彻底清空浏览器本地持久化的身份 Cookie（SESSDATA / bili_jct / DedeUserID / sid）。
+ * 用于软登出保活，不碰设备字段（buvid* 等）。
+ */
+export async function clearBrowserIdentityCookies() {
+  const level = apiLevel();
+  if (!level) {
+    return { ok: false, level, removed: [], reason: TEXT.notify.cookieApiMissing };
+  }
+  const removed = [];
+  const errors = [];
+  for (const key of IDENTITY_COOKIE_KEYS) {
+    try {
+      if (level >= 2) {
+        await gmCookieDelete({ name: key, url: 'https://www.bilibili.com/' });
+        await gmCookieDelete({ name: key, domain: COOKIE_DOMAIN, url: 'https://www.bilibili.com/' }).catch(() => {});
+        await gmCookieDelete({ name: key, domain: 'www.bilibili.com', url: 'https://www.bilibili.com/' }).catch(() => {});
+        await gmCookieDelete({ name: key, domain: 'passport.bilibili.com', url: 'https://passport.bilibili.com/' }).catch(() => {});
+      } else if (level === 1) {
+        await gmSetCookieExpired(key, COOKIE_DOMAIN, COOKIE_PATH);
+        await gmSetCookieExpired(key, 'www.bilibili.com', COOKIE_PATH).catch(() => {});
+      }
+      if (typeof document !== 'undefined' && typeof document.cookie === 'string') {
+        try {
+          document.cookie = `${key}=; path=${COOKIE_PATH}; domain=${COOKIE_DOMAIN}; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+          document.cookie = `${key}=; path=${COOKIE_PATH}; domain=www.bilibili.com; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+          document.cookie = `${key}=; path=${COOKIE_PATH}; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+        } catch (e) {}
+      }
+      removed.push(key);
+    } catch (e) {
+      errors.push(key + ': ' + (e && e.message));
+      log.warn('清空 Cookie 失败', key, e && e.message);
+    }
+  }
+  const ok = removed.includes('SESSDATA');
+  return { ok, level, removed, errors };
 }
 
 /**

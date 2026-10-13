@@ -19,6 +19,7 @@ const KEYS = {
   // 扁平：设置项
   enabled: 'b.enabled',
   patchUi: 'b.patchUi',
+  softLogout: 'b.softLogout',
   prefetch: 'b.prefetch',
   quality: 'b.quality',
   liveQn: 'b.liveQn',
@@ -67,6 +68,9 @@ export const store = {
 
   isPrefetch: () => readBool(KEYS.prefetch, DEFAULTS.prefetch),
   setPrefetch: (v) => write(KEYS.prefetch, !!v),
+
+  isSoftLogout: () => readBool(KEYS.softLogout, DEFAULTS.softLogout),
+  setSoftLogout: (v) => write(KEYS.softLogout, !!v),
 
   getQuality: () => String(read(KEYS.quality, 'max')),
   setQuality: (v) => write(KEYS.quality, String(v)),
