@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24', '26']
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 静态代码与文案规范检查
+        run: npm run check
+
+      - name: 单元测试
+        run: npm test
+
+      - name: 色彩对比度检查
+        run: npm run check:contrast
+
+      # 打真实 B 站公开 API，验证签名与端点契约没有漂移
+      - name: 线上契约校验
+        run: npm run verify:online
+        continue-on-error: true
+
+      - name: 产物规范与体积校验
+        run: node tools/release.mjs --check

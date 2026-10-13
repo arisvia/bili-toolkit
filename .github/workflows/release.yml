@@ -1,0 +1,41 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 单元测试与规范校验
+        run: npm run check && npm test && npm run check:contrast
+
+      - name: 产物构建与归档打包
+        run: npm run release
+
+      - name: 提取版本更新日志
+        run: node tools/extract-changelog.mjs "${{ github.ref_name }}" > dist/release-notes.md
+
+      - name: 发布到 GitHub Releases
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*.user.js
+          make_latest: true
+          generate_release_notes: false
+          body_path: dist/release-notes.md
