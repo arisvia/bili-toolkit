@@ -1,9 +1,9 @@
 {
   "name": "bili-toolkit",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
-  "description": "B 站用户脚本工具箱：多账号权益借用、一键切换、播放体验增强",
+  "description": "B 站多账号多权益工具箱：多账号无缝漫游、软登出凭据保活、大会员权益借用、4K/杜比解锁",
   "keywords": [
     "bilibili",
     "userscript",
@@ -39,6 +39,6 @@
     "uqr": "^0.1.3"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }

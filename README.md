@@ -2,9 +2,9 @@
 
 # bili-toolkit
 
-**B 站用户脚本工具箱** —— 会员权益借用 · 多账号管理 · 播放体验
+**B 站多账号多权益工具箱** —— 秒级漫游 · 软登出保活 · 大会员权益借用 · 4K/杜比解锁
 
-[![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522-339933?style=flat-square&logo=node.js)](https://nodejs.org)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Userscript](https://img.shields.io/badge/userscript-Tampermonkey%20%7C%20Violentmonkey%20%7C%20ScriptCat-42b883?style=flat-square)](https://www.tampermonkey.net/)
 
@@ -89,6 +89,8 @@ B 账号 + qn=127  → quality=120/4K      ← 账号与参数都到位
 |---|---|
 | **扫码添加入池** | 内置矢量二维码生成与状态机，手机扫码即可免复制自动归档进池，支持站点同步 |
 | **多账号池** | 多个账号共存，支持头像展示，自动探测大会员身份与有效期（缓存 24h） |
+| **左下角切号胶囊** | Mini Dock 微缩头像悬浮入口，悬停滑出快捷切号托盘，1 秒直切且免疫第三方顶栏脚本干扰 |
+| **软登出凭据保活** | 拦截 B 站原生退出登录，仅清空本地 Cookie，阻断注销请求外发，池内凭据可一键登回 |
 | **一键切号** | 改写浏览器 Cookie 真正换号，身份字段整组原子替换，刷新即生效 |
 | **自动借用** | 当前号无权益时自动借用池内有大会员的号，主号弹幕/投币/评论归属完全不变 |
 | **新版番剧播放器接管** | 深度接管 Next.js React 18 水合与 nanoPlayer，消除首屏 6 分钟试看与暂停死锁 |
@@ -142,13 +144,12 @@ npm run release      # 构建 + 产物校验 + 打包
 src/
   meta.js              userscript 头部（改版本号只改这里）
   config.js            常量：画质档位、Cookie 策略
-  text.js              界面文案（唯一事实源）
   index.js             入口
   injected/hook.js     主世界钩子（独立作用域，构建时内联）
   core/
-    accounts.js        ★ 多账号池：池形状、迁移、借用来源的自动解析
+    accounts.js        ★ 多账号池：池形状、迁移、借用来源自动解析
     browser-cookie.js  ★ 浏览器 Cookie 改写（切号用，能力分层降级）
-    switcher.js        ★ 账号操作编排：切号 / 借用 / 探测的统一入口
+    switcher.js        ★ 账号操作编排：切号 / 借用 / 探测统一入口
     endpoints.js       ★ 端点表：哪些 host+method+path 允许带 B 的 Cookie
     proxy.js           ★ 代理流水线
     bus.js             沙箱 ↔ 主世界 消息通道
@@ -156,14 +157,16 @@ src/
     session.js         会话：Cookie 取值、发送方式探测、wbi 密钥
     cookie-parse.js    Cookie 原文解析（DevTools 12 列 TSV 等）
     cookie.js          Cookie 清洗 / 补齐 / 脱敏
+    qr-login.js        扫码登录：二维码轮询与凭据解析
+    text.js            界面文案（唯一事实源）
     wbi.js  md5.js     签名
     transport.js       GM_xmlhttpRequest 封装
     cache.js           TTL 缓存 + 在途去重
     patch.js           响应补丁
     region.js          区域形态
-    log.js             日志与统计
+    log.js             日志与控制台徽标
   ui/
-    panel.js           液态玻璃悬浮面板（全脚本唯一配置入口）
+    panel.js           液态玻璃悬浮面板 + 快捷切号 Dock
     menu.js            油猴菜单（全部指向面板，不重复提供配置）
 test/                  Node 测试 + 浏览器夹具
 tools/                 构建、发布、验证工具
