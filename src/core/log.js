@@ -1,4 +1,4 @@
-import { NAME } from '../meta.js';
+import { NAME, NS, VERSION } from '../meta.js';
 
 /**
  * 日志与运行统计。
@@ -82,14 +82,40 @@ function now() {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
 }
 
+const BADGE_STYLES = {
+  info: 'background:#00a396;color:#fff;border-radius:3px;padding:1px 5px;font-size:11px;font-weight:600;',
+  warn: 'background:#e6a23c;color:#fff;border-radius:3px;padding:1px 5px;font-size:11px;font-weight:600;',
+  error: 'background:#f56c6c;color:#fff;border-radius:3px;padding:1px 5px;font-size:11px;font-weight:600;',
+  debug: 'background:#6c757d;color:#fff;border-radius:3px;padding:1px 5px;font-size:11px;font-weight:600;'
+};
+
+/** 打印类似 B 站前端包风格的脚本标识横幅 */
+export function printBanner() {
+  if (typeof console === 'undefined') return;
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    const badge1 = 'background:#00a396;color:#fff;padding:2px 7px;border-radius:3px 0 0 3px;font-weight:bold;font-size:11px;';
+    const badge2 = 'background:#00b4d8;color:#fff;padding:2px 7px;border-radius:0 3px 3px 0;font-weight:bold;font-size:11px;';
+    const titleStyle = 'color:#00a396;font-size:11px;font-weight:500;margin-left:4px;';
+    console.info(`%c ${NS} %c v${VERSION} %c ${NAME}`, badge1, badge2, titleStyle);
+  } else {
+    console.info(`[${NS}] v${VERSION} · ${NAME}`);
+  }
+}
+
 function push(level, args) {
   const line = { t: now(), level, msg: args.map(stringify).join(' ') };
   ring.push(line);
   if (ring.length > RING_MAX) ring.shift();
-  const prefix = `[B权益]`;
-  if (level === 'warn') console.warn(prefix, ...args);
-  else if (level === 'error') console.error(prefix, ...args);
-  else console.info(prefix, ...args);
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    const badgeStyle = BADGE_STYLES[level] || BADGE_STYLES.info;
+    const method = level === 'warn' ? console.warn : level === 'error' ? console.error : console.info;
+    method(`%c B权益 %c`, badgeStyle, '', ...args);
+  } else {
+    const prefix = `[B权益]`;
+    if (level === 'warn') console.warn(prefix, ...args);
+    else if (level === 'error') console.error(prefix, ...args);
+    else console.info(prefix, ...args);
+  }
 }
 
 function stringify(v) {

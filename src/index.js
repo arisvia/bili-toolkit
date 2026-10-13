@@ -11,7 +11,7 @@ import hookSource from './injected/hook.js';
 import { setToken, startBus, pushConfig, getToken } from './core/bus.js';
 import { injectHook, liveConfig } from './core/inject.js';
 import { store } from './core/store.js';
-import { setDebug, log } from './core/log.js';
+import { setDebug, log, printBanner } from './core/log.js';
 import { TEXT } from './core/text.js';
 import { mountPanel, refreshPanel } from './ui/panel.js';
 import { registerMenus } from './ui/menu.js';
@@ -31,6 +31,7 @@ function randomToken() {
 }
 
 function boot() {
+  printBanner();
   setDebug(store.isDebug());
   const token = randomToken();
   setToken(token);

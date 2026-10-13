@@ -82,6 +82,112 @@ const CSS = `
   font-size: 10px; line-height: 15px; text-align: center; font-weight: 600;
   box-shadow: 0 0 0 2px var(--bg);
 }
+#${ID} .dock-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+#${ID} .dock-tray {
+  position: absolute;
+  bottom: 42px;
+  left: 0;
+  min-width: 160px;
+  max-width: 240px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  opacity: 0;
+  transform: translateY(6px) scale(.96);
+  pointer-events: none;
+  transition: opacity .18s cubic-bezier(.2,.8,.2,1), transform .18s cubic-bezier(.2,.8,.2,1);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 10;
+  box-shadow: 0 10px 30px var(--sh), inset 0 1px 0 var(--hl);
+}
+#${ID} .dock-wrap:hover .dock-tray,
+#${ID} .dock-wrap:focus-within .dock-tray {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+#${ID} .panel.show ~ .dock-wrap .dock-tray {
+  display: none !important;
+}
+#${ID} .dock-tray-head {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: .55;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--sep);
+}
+#${ID} .dock-tray-empty {
+  font-size: 11.5px;
+  opacity: .45;
+  padding: 4px 2px;
+}
+#${ID} .dock-tray-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+#${ID} .dock-tray-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .14s;
+  font-size: 12px;
+}
+#${ID} .dock-tray-item:hover,
+#${ID} .dock-tray-item:focus-visible {
+  background: var(--hov);
+  outline: none;
+}
+#${ID} .dock-tray-item.active {
+  background: var(--hov2);
+}
+#${ID} .dock-tray-item.disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+#${ID} .dock-tray-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#${ID} .dot-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+#${ID} .dot.has-avatar .face {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--bg);
+}
+#${ID} .dot.has-avatar .dot-vip-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  border: 1.5px solid var(--bg);
+  box-shadow: 0 0 4px rgba(255, 215, 0, .6);
+}
 #${ID} .panel {
   width: 324px; max-height: min(78vh, 620px); margin-bottom: 10px;
   overflow: hidden auto; display: none;
@@ -510,6 +616,7 @@ function buildPanel(body) {
     segmented([{ value: true, label: TEXT.switches.on }, { value: false, label: TEXT.switches.off }], v, set);
   misc.appendChild(row(TEXT.switches.ui, onOffSeg(store.isPatchUi(), (v) => { store.setPatchUi(v); afterChange(); })));
   misc.appendChild(row(TEXT.switches.prefetch, onOffSeg(store.isPrefetch(), (v) => { store.setPrefetch(v); afterChange(); })));
+  misc.appendChild(row(TEXT.switches.softLogout, onOffSeg(store.isSoftLogout(), (v) => { store.setSoftLogout(v); afterChange(); })));
   misc.appendChild(row(TEXT.switches.debug, onOffSeg(isDebug(), (v) => { store.setDebug(v); setDebug(v); })));
   body.appendChild(misc);
 
@@ -1147,6 +1254,9 @@ function buildPanel(body) {
         if (saved.ok) {
           highlightNew(saved.id);
           say('✅ ' + TEXT.qr.successToast + (saved.account ? ' (' + (saved.account.uname || saved.account.mid) + ')' : ''), '#00a396');
+          if (saved.switch && saved.switch.needReload) {
+            setTimeout(() => location.reload(), 1200);
+          }
         } else {
           say('❌ ' + TEXT.qr.failedToast + saved.reason, '#f56c6c');
         }
@@ -1308,11 +1418,90 @@ function toggle(force) {
   renderDot();
 }
 
+let lastTrayFingerprint = '';
+
+function renderDockTray() {
+  const tray = root.querySelector('.dock-tray');
+  if (!tray) return;
+  const o = overview();
+  const rows = o.rows || [];
+  const fp = rows.map((r) => `${r.id}:${r.isActive}:${r.uname}:${r.vip}:${r.face}`).join('|') + '|canWrite:' + o.canWrite;
+  if (fp === lastTrayFingerprint && tray.children.length > 0) return;
+  lastTrayFingerprint = fp;
+
+  const focusedId = tray.contains(document.activeElement) ? document.activeElement.dataset?.id : null;
+  tray.innerHTML = '';
+
+  const head = el('div', 'dock-tray-head', TEXT.dock.quickSwitch);
+  tray.appendChild(head);
+
+  if (!rows.length) {
+    tray.appendChild(el('div', 'dock-tray-empty', TEXT.dock.noOther));
+    return;
+  }
+
+  const list = el('div', 'dock-tray-list');
+  for (const r of rows) {
+    const item = el('div', 'dock-tray-item' + (r.isActive ? ' active' : '') + (!o.canWrite ? ' disabled' : ''));
+    item.dataset.id = r.id;
+    item.tabIndex = 0;
+    item.setAttribute('role', 'button');
+
+    if (r.face) {
+      const img = el('img', 'avatar');
+      img.src = r.face;
+      item.appendChild(img);
+    } else {
+      const init = el('span', 'avatar avatar-initial', (r.uname || r.mid || '?')[0]);
+      item.appendChild(init);
+    }
+
+    const name = el('span', 'dock-tray-name', r.uname || r.mid || r.id.slice(0, 8));
+    item.appendChild(name);
+
+    if (r.vip) {
+      item.appendChild(el('span', 'tag vip', TEXT.dock.vipBadge));
+    }
+    if (r.isActive) {
+      item.appendChild(el('span', 'tag on', TEXT.dock.currentBadge));
+    }
+
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (r.isActive) return;
+      if (!o.canWrite) {
+        alert(TEXT.notify.switchUnsupportedLong);
+        return;
+      }
+      if (o.browserMid && !confirm(TEXT.pool.confirms.switch)) return;
+      switchLoginTo(r.id).then((sw) => {
+        if (sw.ok && sw.needReload) location.reload();
+        else if (!sw.ok) alert(sw.reason || TEXT.notify.switchFail);
+      });
+    });
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        item.click();
+      }
+    });
+
+    list.appendChild(item);
+  }
+  tray.appendChild(list);
+
+  if (focusedId) {
+    const nextFocus = tray.querySelector(`[data-id="${focusedId}"]`);
+    if (nextFocus) nextFocus.focus();
+  }
+}
+
 function renderDot() {
   const dot = root.querySelector('.dot');
+  if (!dot) return;
   const face = root.querySelector('.face');
   const s = state();
-  face.style.background = s.ok ? '' : s.dot;
+  if (face) face.style.background = s.ok ? '' : s.dot;
   dot.classList.toggle('on', s.ok);
   let badge = root.querySelector('.badge');
   if (!s.ok && s.note) {
@@ -1320,7 +1509,34 @@ function renderDot() {
     badge.textContent = '!';
     badge.title = s.note;
   } else if (badge) badge.remove();
-  dot.title = (s.ok ? TEXT.badge.running : s.note) + '\n点击展开';
+
+  const o = overview();
+  const cur = o.rows.find((r) => r.isActive);
+  let avatarImg = dot.querySelector('.dot-avatar');
+  let vipBadge = dot.querySelector('.dot-vip-badge');
+
+  if (cur && cur.face) {
+    dot.classList.add('has-avatar');
+    if (!avatarImg) {
+      avatarImg = el('img', 'dot-avatar');
+      dot.insertBefore(avatarImg, dot.firstChild);
+    }
+    if (avatarImg.src !== cur.face) avatarImg.src = cur.face;
+    if (cur.vip) {
+      if (!vipBadge) {
+        vipBadge = el('span', 'dot-vip-badge');
+        vipBadge.title = TEXT.dock.vipBadge;
+        dot.appendChild(vipBadge);
+      }
+    } else if (vipBadge) vipBadge.remove();
+  } else {
+    dot.classList.remove('has-avatar');
+    if (avatarImg) avatarImg.remove();
+    if (vipBadge) vipBadge.remove();
+  }
+
+  dot.title = (s.ok ? TEXT.badge.running : s.note || '') + '\n' + (cur ? (cur.uname || cur.mid || '') + ' · ' : '') + (TEXT.dock.hoverTip || '');
+  renderDockTray();
 }
 
 export function mountPanel() {
@@ -1336,7 +1552,10 @@ export function mountPanel() {
         <div class="x" title="收起">✕</div>
       </div>
     </div>
-    <div class="dot glass" role="button" tabindex="0"><div class="face"></div></div>`;
+    <div class="dock-wrap">
+      <div class="dock-tray glass"></div>
+      <div class="dot glass" role="button" tabindex="0"><div class="face"></div></div>
+    </div>`;
   (document.body || document.documentElement).appendChild(root);
 
   const panel = root.querySelector('.panel');
@@ -1349,12 +1568,17 @@ export function mountPanel() {
   dot.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
   });
+  const wrap = root.querySelector('.dock-wrap');
+  if (wrap) {
+    wrap.addEventListener('mouseenter', () => renderDockTray());
+  }
   void api;
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && open) toggle(false);
   });
   document.addEventListener('DOMContentLoaded', () => renderDot());
+  overviewAsync().then(() => renderDot()).catch(() => {});
   renderDot();
   setInterval(renderDot, 2000);
 }

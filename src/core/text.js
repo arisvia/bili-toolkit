@@ -278,6 +278,7 @@ export const TEXT = {
     borrow: '权益借用',
     ui: '界面伪装',
     prefetch: '预取',
+    softLogout: '软登出保活',
     debug: '调试日志',
     on: '开',
     off: '关',
@@ -348,7 +349,18 @@ export const TEXT = {
     reloadSoon: '，页面即将刷新',
     switchFail: '切换失败：',
     switchUnsupportedLong: '当前管理器不支持写入 Cookie，请在面板里改用「用它借用」',
-    switchUnsupportedShort: '管理器不支持写入 Cookie'
+    switchUnsupportedShort: '管理器不支持写入 Cookie',
+    softLogoutCleaned: '软登出：已清理本地身份 Cookie'
+  },
+
+  /* --- 迷你胶囊 Dock --- */
+  dock: {
+    quickSwitch: '快捷切号',
+    noOther: '无其他账号',
+    switching: '正在切号…',
+    currentBadge: '当前',
+    vipBadge: '大会员',
+    hoverTip: '悬停快捷切号'
   },
 
   /* --- 诊断 --- */
