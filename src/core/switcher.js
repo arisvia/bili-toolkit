@@ -42,6 +42,57 @@ import {
 } from './accounts.js';
 import { applyAccount, staleKeysFor, presentIdentityKeys, canWriteCookies, clearBrowserIdentityCookies } from './browser-cookie.js';
 
+const PROGRESS_STORAGE_KEY = '__bili_vip_resume_progress__';
+
+/** 保存当前页面视频的播放进度，供切号刷新后热恢复 */
+export function savePlaybackProgress() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  try {
+    const v = document.querySelector('video');
+    if (v && typeof v.currentTime === 'number' && v.currentTime > 2) {
+      const data = {
+        url: location.href.split('#')[0].split('?')[0],
+        time: v.currentTime,
+        paused: !!v.paused,
+        savedAt: Date.now()
+      };
+      sessionStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(data));
+    }
+  } catch (e) {}
+}
+
+/** 刷新加载后，若发现切号前的播放进度缓存，尝试就地恢复进度 */
+export function restorePlaybackProgress() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  try {
+    const raw = sessionStorage.getItem(PROGRESS_STORAGE_KEY);
+    if (!raw) return;
+    sessionStorage.removeItem(PROGRESS_STORAGE_KEY);
+    const data = JSON.parse(raw);
+    if (!data || !data.time || Date.now() - data.savedAt > 60000) return;
+    const curUrl = location.href.split('#')[0].split('?')[0];
+    if (data.url !== curUrl) return;
+
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts++;
+      const v = document.querySelector('video');
+      if (v && v.duration && v.duration > 5) {
+        clearInterval(timer);
+        try {
+          v.currentTime = data.time;
+          if (!data.paused && v.paused) {
+            v.play().catch(() => {});
+          }
+          log.info(TEXT.notify.progressResumed, Math.floor(data.time) + 's');
+        } catch (e) {}
+      } else if (attempts >= 30) {
+        clearInterval(timer);
+      }
+    }, 300);
+  } catch (e) {}
+}
+
 const BROWSER_ID_TTL_MS = 30 * 1000;
 let browserWhoCache = { at: 0, who: { mid: '', uname: '', vipStatus: 0 } };
 
@@ -192,6 +243,7 @@ export async function switchLoginTo(id) {
     return { ok: false, reason: applied.reason, needReload: false, stale, written: applied.written };
   }
 
+  savePlaybackProgress();
   setActiveId(target.id);
   invalidateBrowserWho(); // 浏览器登录态刚变，30 秒缓存必须立刻作废
   afterSwitch();
@@ -260,6 +312,7 @@ export function overview() {
     face: a.face || '',
     mid: a.mid,
     vip: a.vipStatus === 1,
+    invalid: !!a.invalid,
     checkedAt: a.checkedAt,
     stale: needsProbe(a),
     isActive: !!currentBrowserMid && !!a.mid && a.mid === currentBrowserMid,

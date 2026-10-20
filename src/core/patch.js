@@ -92,21 +92,32 @@ const CODEC_PRIORITY = {
 };
 
 /**
- * 在保持分辨率档位原始先后顺序的前提下，按用户编码偏好对同一分辨率内的流重排。
- * auto 或未启用偏好时直接返回原对象，不进行任何修改。
+ * 1. 在保持分辨率档位原始先后顺序的前提下，按用户编码偏好对同一分辨率内的视频流重排。
+ * 2. 对同一 DASH 响应内的 audio 流按码率/音质规格降序重排，确保播放器首选 192k/320k 高音质流。
  */
 export function reorderStreams(root, codecPref = 'auto') {
   if (!root || typeof root !== 'object') return root;
-  if (!codecPref || codecPref === 'auto') return root;
-  const pri = CODEC_PRIORITY[codecPref];
-  if (!pri || !pri.length) return root;
 
   const d = root.data || root.result;
   if (!d || typeof d !== 'object') return root;
   const pu = d.playurl && typeof d.playurl === 'object' ? d.playurl : null;
   const src = pu || (d.video_info && typeof d.video_info === 'object' ? d.video_info : d);
   const dash = src && src.dash;
-  if (!dash || !Array.isArray(dash.video)) return root;
+  if (!dash) return root;
+
+  // 音频流：按带宽 (bandwidth) 或音质 id (30280 192k > 30232 132k > 30216 64k) 降序排，高码率优先
+  if (Array.isArray(dash.audio) && dash.audio.length > 1) {
+    dash.audio.sort((a, b) => {
+      const bwA = (a && (a.bandwidth || a.id)) || 0;
+      const bwB = (b && (b.bandwidth || b.id)) || 0;
+      return bwB - bwA;
+    });
+  }
+
+  if (!codecPref || codecPref === 'auto') return root;
+  const pri = CODEC_PRIORITY[codecPref];
+  if (!pri || !pri.length) return root;
+  if (!Array.isArray(dash.video)) return root;
 
   // 按分辨率 id 归类，保留各档位首次出现的先后顺序
   const groups = new Map();
@@ -153,7 +164,7 @@ export function patchJsonText(text, opts = {}) {
     if (patchVip) patchVipFlags(o);
     if (stripTrial) stripTrialFlags(o);
     if (region !== 'off') patchRegion(o, region);
-    if (codec !== 'auto') reorderStreams(o, codec);
+    reorderStreams(o, codec);
     return JSON.stringify(o);
   } catch {
     return text;

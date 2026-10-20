@@ -348,8 +348,23 @@ console.log('\n[11] 编码偏好重排');
   // 4) 兼容 AVC
   const patched = JSON.parse(patchJsonText(rawJson, { codec: 'avc' }));
   check('兼容 AVC 时 112 档位首选 AVC 编码', patched.data.dash.video[3].codecid === 7);
+  // 5) 音频流重排：按带宽/高码率降序排
+  const rawWithAudio = JSON.parse(JSON.stringify({
+    data: {
+      dash: {
+        video: [{ id: 120, codecid: 7 }],
+        audio: [
+          { id: 30232, bandwidth: 90044 },
+          { id: 30216, bandwidth: 65703 },
+          { id: 30280, bandwidth: 174668 }
+        ]
+      }
+    }
+  }));
+  reorderStreams(rawWithAudio, 'auto');
+  const aList = rawWithAudio.data.dash.audio;
+  check('音频流按带宽降序排列 (30280 192k 优先)', aList[0].id === 30280 && aList[1].id === 30232 && aList[2].id === 30216);
 }
-
 console.log('\n[12] 扫码登录凭据提取与矢量二维码');
 {
   const { extractCookies } = await load('src/core/qr-login.js');

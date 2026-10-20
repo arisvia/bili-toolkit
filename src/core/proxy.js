@@ -11,6 +11,7 @@ import { store } from './store.js';
 import { resolveEndpoint } from './endpoints.js';
 import { httpRequest, parseJsonSafe } from './transport.js';
 import { ensureMixinKey, getEffectiveCookie, hasCookie, getBCsrf, resolveStrategy } from './session.js';
+import { borrowAccountId, markInvalid } from './accounts.js';
 import { signUrl, hasWbiSignature } from './wbi.js';
 import { patchJsonText } from './patch.js';
 import { cacheGet, cacheSet, cacheClear, cacheGeneration, coalesce, cacheInfo } from './cache.js';
@@ -279,6 +280,10 @@ export async function handleProxy(ep, msg) {
       stats.proxyFail++;
       stats.lastError = `${ep.id} code=${json.code} ${json.message || ''}`;
       log.warn(`代理返回业务错误 ${ep.id}：code=${json.code} ${json.message || ''}`);
+      if (json.code === -101 || json.code === -10403) {
+        const curBorrowId = borrowAccountId();
+        if (curBorrowId) markInvalid(curBorrowId, `${json.code} ${json.message || ''}`);
+      }
       return { passthrough: true };
     }
 

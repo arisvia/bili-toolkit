@@ -5,7 +5,7 @@
  * 否则会被 esbuild 打包进正文代码作为无用死字符串残留。
  */
 
-export const VERSION = '1.2.0';
+export const VERSION = '1.3.0';
 
 export const NAME = 'B站 · 多账号多权益工具箱';
 export const NAME_EN = 'Bilibili Multi-Account Toolkit';

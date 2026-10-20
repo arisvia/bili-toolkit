@@ -124,7 +124,8 @@ export const TEXT = {
       borrowed: '借用中',
       vip: '大会员',
       plain: '非会员',
-      unknown: '未探测'
+      unknown: '未探测',
+      invalid: '凭据失效'
     },
     actions: {
       switchTo: '切到此号',
@@ -165,6 +166,7 @@ export const TEXT = {
       removed: '已从池中移除',
       stale: '待刷新(超24h)',
       staleTip: '本地超过24小时未核验大会员状态，不代表Cookie失效。点击右侧重探即可联网刷新。',
+      invalidTip: '接口返回账号未登录或大会员被吊销(code=-101/-10403)。请点击重探或重新扫码录入。',
       autoBorrowTip: '解除手动锁定，恢复为系统自动挑选借用来源',
       recheckTip: '联网核验该账号的昵称、头像与大会员状态',
       /**
@@ -350,7 +352,8 @@ export const TEXT = {
     switchFail: '切换失败：',
     switchUnsupportedLong: '当前管理器不支持写入 Cookie，请在面板里改用「用它借用」',
     switchUnsupportedShort: '管理器不支持写入 Cookie',
-    softLogoutCleaned: '软登出：已清理本地身份 Cookie'
+    softLogoutCleaned: '软登出：已清理本地身份 Cookie',
+    progressResumed: '已恢复切号前的播放进度 '
   },
 
   /* --- 迷你胶囊 Dock --- */
@@ -398,6 +401,7 @@ export const TEXT = {
     needSetup: '待添加账号',
     notReady: '未就绪',
     failing: '代理失败',
+    invalid: '借用账号已失效',
     off: '已停用'
   }
 };

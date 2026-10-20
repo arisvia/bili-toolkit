@@ -346,8 +346,9 @@ const CSS = `
 #${ID} .tag.on    { background: var(--tag-on-bg);    color: var(--tag-on-fg); }
 #${ID} .tag.borrow { background: var(--tag-borrow-bg); color: var(--tag-borrow-fg); }
 #${ID} .tag.vip    { background: var(--tag-vip-bg);    color: var(--tag-vip-fg); }
-#${ID} .tag.plain  { background: var(--tag-plain-bg);  color: var(--tag-plain-fg); }
-#${ID} .tag.muted  { background: transparent; color: var(--tag-muted-fg); }
+  #${ID} .tag.plain  { background: var(--tag-plain-bg);  color: var(--tag-plain-fg); }
+  #${ID} .tag.warn   { background: var(--tag-warn-bg);   color: var(--tag-warn-fg); }
+  #${ID} .tag.muted  { background: transparent; color: var(--tag-muted-fg); }
 #${ID} .avatar {
   width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
   flex-shrink: 0; border: 1px solid var(--sep); background: var(--hov2);
@@ -403,6 +404,7 @@ const CSS = `
     --tag-borrow-bg: rgba(230,162,60,.20); --tag-borrow-fg: #ffc966;
     --tag-vip-bg: rgba(251,114,153,.20); --tag-vip-fg: #ffa3be;
     --tag-plain-bg: rgba(255,255,255,.09); --tag-plain-fg: rgba(255,255,255,.7);
+    --tag-warn-bg: rgba(245,108,108,.20); --tag-warn-fg: #ff8585;
     --tag-muted-fg: rgba(255,255,255,.55);
   }
 }
@@ -427,6 +429,7 @@ const CSS = `
     --tag-borrow-bg: rgba(230,162,60,.14); --tag-borrow-fg: #8c5200;
     --tag-vip-bg: rgba(251,114,153,.14); --tag-vip-fg: #b82153;
     --tag-plain-bg: rgba(20,22,26,.06); --tag-plain-fg: rgba(20,22,26,.6);
+    --tag-warn-bg: rgba(245,108,108,.15); --tag-warn-fg: #d32f2f;
     --tag-muted-fg: rgba(20,22,26,.62);
   }
 }
@@ -509,6 +512,9 @@ function state() {
   if (!store.isEnabled()) return { ok: false, dot: '#9aa0a6', note: TEXT.badge.off };
   if (!hasCookie()) return { ok: false, dot: '#fb7299', note: TEXT.badge.needSetup };
   if (!isHookAlive()) return { ok: false, dot: '#e6a23c', note: TEXT.badge.notReady };
+  const o = overview();
+  const borrowAcc = o.rows.find((r) => r.isBorrow);
+  if (borrowAcc && borrowAcc.invalid) return { ok: false, dot: '#f56c6c', note: TEXT.badge.invalid };
   if (stats.proxyFail > 0 && stats.proxyOk === 0) return { ok: false, dot: '#f56c6c', note: TEXT.badge.failing };
   return { ok: true, dot: '', note: '' };
 }
@@ -883,13 +889,17 @@ function buildPanel(body) {
     if (r.isBorrow) {
       tags.appendChild(mark('borrow', TEXT.pool.labels.borrowed));
     }
-    if (r.stale && r.checkedAt) {
+    if (r.invalid) {
+      const t = mark('warn', TEXT.pool.labels.invalid);
+      t.title = TEXT.pool.states.invalidTip;
+      tags.appendChild(t);
+    } else if (r.stale && r.checkedAt) {
       const t = mark('muted', TEXT.pool.states.stale);
       t.title = TEXT.pool.states.staleTip;
       tags.appendChild(t);
     }
-    const vip = el('span', 'tag ' + (r.vip ? 'vip' : r.checkedAt ? 'plain' : 'muted'),
-      r.vip ? TEXT.pool.labels.vip : r.checkedAt ? TEXT.pool.labels.plain : TEXT.pool.labels.unknown);
+    const vip = el('span', 'tag ' + (r.vip ? 'vip' : r.invalid ? 'muted' : r.checkedAt ? 'plain' : 'muted'),
+      r.vip ? TEXT.pool.labels.vip : r.invalid ? TEXT.pool.labels.plain : r.checkedAt ? TEXT.pool.labels.plain : TEXT.pool.labels.unknown);
     tags.appendChild(vip);
     head.appendChild(tags);
     card.appendChild(head);
@@ -1459,7 +1469,9 @@ function renderDockTray() {
     const name = el('span', 'dock-tray-name', r.uname || r.mid || r.id.slice(0, 8));
     item.appendChild(name);
 
-    if (r.vip) {
+    if (r.invalid) {
+      item.appendChild(el('span', 'tag warn', TEXT.pool.labels.invalid));
+    } else if (r.vip) {
       item.appendChild(el('span', 'tag vip', TEXT.dock.vipBadge));
     }
     if (r.isActive) {

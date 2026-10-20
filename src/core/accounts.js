@@ -30,7 +30,7 @@ export function fingerprintId(cookie) {
 }
 
 export function hasVip(account) {
-  return !!account && Number(account.vipStatus) === 1;
+  return !!account && !account.invalid && Number(account.vipStatus) === 1;
 }
 
 /* ------------------------------------------------------------------ *
@@ -53,6 +53,7 @@ function normalizeAccount(raw) {
     face: String(raw.face || ''),
     vipStatus: Number(raw.vipStatus) === 1 ? 1 : 0,
     vipType: Number(raw.vipType) || 0,
+    invalid: !!raw.invalid,
     checkedAt: Number(raw.checkedAt) || 0,
     addedAt: Number(raw.addedAt) || 0
   };
@@ -285,8 +286,22 @@ export function markProbed(id, info) {
   if (info.face) acc.face = String(info.face);
   acc.vipStatus = Number(info.vipStatus) === 1 ? 1 : 0;
   acc.vipType = Number(info.vipType) || 0;
+  acc.invalid = false;
   acc.checkedAt = Date.now();
   savePool(p);
+  return true;
+}
+
+/** 标记账号凭据在业务上已失效（遇到 code=-101 或 -10403） */
+export function markInvalid(id, reason = '') {
+  const p = pool();
+  const acc = p.accounts.find((a) => a.id === id);
+  if (!acc) return false;
+  acc.invalid = true;
+  acc.vipStatus = 0;
+  acc.vipType = 0;
+  savePool(p);
+  if (reason) log.warn(`账号 [${acc.uname || acc.mid || id}] 凭据已失效：${reason}`);
   return true;
 }
 

@@ -37,9 +37,28 @@ export function liveConfig() {
   };
 }
 
+function getTrustedScript(source) {
+  if (typeof window !== 'undefined' && window.trustedTypes && typeof window.trustedTypes.createPolicy === 'function') {
+    try {
+      const policy = window.trustedTypes.createPolicy('bili-toolkit#hook', {
+        createScript: (s) => s
+      });
+      return policy.createScript(source);
+    } catch (e) {
+      // policy 名称已被占用时尝试直接返回原字符串或使用 default policy
+    }
+  }
+  return source;
+}
+
 function injectNow(source, done) {
   const el = document.createElement('script');
-  el.textContent = source;
+  const trusted = getTrustedScript(source);
+  try {
+    el.textContent = trusted;
+  } catch (e) {
+    el.text = trusted;
+  }
   el.setAttribute('data-bili-vip', '1');
   const parent = document.head || document.documentElement || document.body;
   if (!parent) return false;

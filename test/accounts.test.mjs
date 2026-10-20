@@ -669,8 +669,65 @@ console.log('\n[19] 软登出：仅清空浏览器本地会话，保留账号池
   const failRes = await swNoPriv.softLogout();
   check('不支持删 Cookie 的管理器如实返回失败', failRes.ok === false);
 }
+console.log('\n[20] 账号凭据失效标记 (markInvalid) 与状态隔离');
+{
+  const ctx = makeContext(
+    seedPool([
+      acc('idA', A_COOKIE, { mid: '111', uname: '普通号' }),
+      acc('idB', B_COOKIE, { mid: '222', uname: '大会员号', vipStatus: 1, vipType: 2 })
+    ], { activeId: 'idA' })
+  );
+  const accApi = await load('src/core/accounts.js', ctx);
+  const sw = await load('src/core/switcher.js', ctx);
 
-console.log('');
+  check('初始状态下借用源自动解析为大会员号 idB', accApi.resolveBorrow().account?.id === 'idB');
+  check('idB 初始拥有会员权益', accApi.hasVip(accApi.byId('idB')));
+
+  // 模拟接口返回 -101 或 -10403 触发失效标记
+  accApi.markInvalid('idB', '-101 账号未登录');
+  const bAfter = accApi.byId('idB');
+  check('标记失效后 invalid 属性为 true', bAfter.invalid === true);
+  check('标记失效后 vipStatus 被置 0', bAfter.vipStatus === 0);
+  check('标记失效后 hasVip 返回 false', accApi.hasVip(bAfter) === false);
+
+  // 借用解析自动跳过失效账号
+  const borrowAfter = accApi.resolveBorrow();
+  check('失效后借用源不再推荐 idB (退回自身或无会员)', borrowAfter.account?.id !== 'idB');
+
+  // overview 正常暴露 invalid 状态
+  const o = sw.overview();
+  const rowB = o.rows.find((r) => r.id === 'idB');
+  check('overview 中该账号 invalid 为 true', rowB?.invalid === true);
+
+  // 重新探活成功后清除 invalid 标记
+  accApi.markProbed('idB', { mid: '222', uname: '大会员号', vipStatus: 1, vipType: 2 });
+  const bRechecked = accApi.byId('idB');
+  check('重新探测成功后 invalid 被清除', bRechecked.invalid === false);
+  check('重新探测成功后 vipStatus 恢复', bRechecked.vipStatus === 1);
+}
+
+console.log('\n[21] 切号播放进度记忆与热恢复');
+{
+  const sessionMap = new Map();
+  const mockVideo = { currentTime: 156.4, duration: 300, paused: false, play: () => Promise.resolve() };
+  const ctx = makeContext(
+    seedPool([acc('idB', B_COOKIE, { mid: '222' })], { activeId: 'idA' })
+  );
+  ctx.sessionStorage = {
+    setItem: (k, v) => sessionMap.set(k, String(v)),
+    getItem: (k) => sessionMap.get(k) || null,
+    removeItem: (k) => sessionMap.delete(k)
+  };
+  ctx.document.querySelector = (sel) => (sel === 'video' ? mockVideo : null);
+
+  const sw = await load('src/core/switcher.js', ctx);
+  sw.savePlaybackProgress();
+  const savedRaw = sessionMap.get('__bili_vip_resume_progress__');
+  check('播放进度被安全序列化写入 sessionStorage', !!savedRaw);
+  const parsed = JSON.parse(savedRaw || '{}');
+  check('记录的播放时间精确一致', parsed.time === 156.4);
+  check('记录的播放状态为非暂停', parsed.paused === false);
+}
 if (failed) {
   console.error(`\x1b[31m${failed} 项失败\x1b[0m`);
   process.exit(1);
