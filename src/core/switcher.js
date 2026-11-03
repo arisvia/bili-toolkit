@@ -211,6 +211,14 @@ export async function switchLoginTo(id) {
   if (!canWriteCookies()) {
     return { ok: false, reason: 'unsupported', needReload: false, stale: [], written: [] };
   }
+  // 没有 bili_jct 就切号 = 写进一个「能播放、但投币/点赞/评论全 -111」的登录态：
+  // 前端 csrf 只能从 document.cookie 读，池里没存就补不出来（无法从 SESSDATA 推导）。
+  // 宁可拒绝，也不能让人以为切成功了。
+  // 必须排在最前面 —— 下面「已是当前号就重写一遍」的捷径也走 applyAccount，同样会写出坏 csrf。
+  const tgt = parseCookie(target.cookie);
+  if (!tgt.bili_jct && !tgt['bili-jct']) {
+    return { ok: false, reason: TEXT.notify.noCsrfWrite, needReload: false, stale: [], written: [] };
+  }
   const who = browserWhoCache.who;
   const isAlreadyInBrowser = !!who.mid && who.mid === target.mid;
   if (target.id === activeAccount()?.id && hasCookie() && isAlreadyInBrowser) {
@@ -232,7 +240,6 @@ export async function switchLoginTo(id) {
   if (!parsed.DedeUserID && target.mid) {
     cookieToApply = `${cookieToApply}; DedeUserID=${target.mid}`;
   }
-
   // 切换前「已知存在」的字段：池内记录的旧账号 Cookie（它就是上次写进去的那份，
   // 含 HttpOnly 字段）＋ 页面 document.cookie。两者合起来才够算出该删谁。
   const before = presentIdentityKeys(borrowCookie());

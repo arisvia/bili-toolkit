@@ -1383,29 +1383,33 @@ function renderDiag() {
   // 但「钩子活着」和「拦截接管了请求」必须分开报，否则「画质没上去」时无从查起。
   pingHook();
   const sc = getHookSelfCheck();
+  // 判据用**沙箱实际供上的响应数**，不是钩子的 intercepted：
+  //   · intercepted 只在 callSandbox 里自增，而预热走 post({type:'prefetch'})，不计数；
+  //   · 面板 1 秒轮询，视频页刚打开时首个 playurl 还没发出，读到的必然是 0；
+  //   · 于是「偶尔显示尚未接管」全是误报 —— 显示 0 只说明「到此刻没请求走到白名单」。
+  // 沙箱侧 proxyOk + cacheServed 才是「真的借到过 B 的数据」，对得上用户看到的画质。
+  const hits = stats.proxyOk + stats.cacheServed;
   const s2 = el('span', 's');
   s2.appendChild(el('span', 'k', TEXT.diag.selfCheck));
   let txt = TEXT.diag.selfDead;
   let warn = true; // 没注入钩子 = 确定坏了
   if (sc) {
     warn = !sc.playinfoHooked; // 只在「访问器没装上」时报警
+    // 借用总开关关着时，不隐藏 playinfo 是**设计如此**，不能报成异常，
+    // 也不该被「还没有代理命中」盖住 —— 先判开关，再判有没有命中。
     txt = !sc.playinfoHooked
       ? TEXT.diag.selfNoPlayinfo
-      : !sc.intercepted
-        ? TEXT.diag.selfNoIntercept
-        : (sc.playinfoHidden
-            ? TEXT.diag.selfOk
-            // 借用总开关关着时不隐藏是**应该的**，不能报成异常
-            : sc.hidePlayinfo
-              ? TEXT.diag.selfPlayinfoOff
-              : TEXT.diag.selfPlayinfoNotNeeded
-          ).replace('{n}', sc.intercepted);
+      : !sc.hidePlayinfo
+        ? (hits ? TEXT.diag.selfPlayinfoNotNeeded : TEXT.diag.selfNoBorrow).replace('{n}', hits)
+        : !hits
+          ? TEXT.diag.selfNoIntercept
+          : (sc.playinfoHidden ? TEXT.diag.selfOk : TEXT.diag.selfPlayinfoOff).replace('{n}', hits);
   }
   const v2 = el('span', 'v', txt);
   // 「已连接但还没接管到请求」是非视频页的正常状态，不标黄 —— 误报比漏报更让人不信面板
   if (warn) v2.style.color = '#e6a23c';
   s2.appendChild(v2);
-  s2.title = TEXT.diag.selfCheckTip;
+  s2.title = sc ? TEXT.diag.selfCheckTip + TEXT.diag.selfHookForward.replace('{n}', sc.intercepted) : TEXT.diag.selfCheckTip;
   box.appendChild(s2);
 }
 

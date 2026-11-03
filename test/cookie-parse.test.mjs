@@ -110,8 +110,10 @@ console.log('\n[4b] 设备字段分级与切号白名单');
   const { IDENTITY_COOKIE_KEYS, HTTP_ONLY_COOKIE_KEYS } = await load('src/config.js');
   check('切号白名单不含任何设备字段', !IDENTITY_COOKIE_KEYS.some((k) => deviceKeys.includes(k)), IDENTITY_COOKIE_KEYS);
   check('切号白名单只含身份字段', IDENTITY_COOKIE_KEYS.join() === 'SESSDATA,bili_jct,DedeUserID,DedeUserID__ckMd5,sid', IDENTITY_COOKIE_KEYS);
-  // 默认字符串排序：大写在小写前，所以 SESSDATA 排第一
-  check('HttpOnly 标记只给站点上本就是 HttpOnly 的三个', [...HTTP_ONLY_COOKIE_KEYS].sort().join() === 'SESSDATA,bili_jct,sid', [...HTTP_ONLY_COOKIE_KEYS]);
+  // 只有 bili_jct 必须可读（前端拿它当 csrf）。SESSDATA / sid 按更严的 HttpOnly 写。
+  check('HttpOnly 给 SESSDATA + sid，不给 bili_jct', [...HTTP_ONLY_COOKIE_KEYS].join() === 'SESSDATA,sid', [...HTTP_ONLY_COOKIE_KEYS]);
+  check('bili_jct 不能标 HttpOnly（前端要从 document.cookie 读 csrf）', !HTTP_ONLY_COOKIE_KEYS.has('bili_jct'));
+  check('sid 仍按 HttpOnly 写（前端不读它，宁严）', HTTP_ONLY_COOKIE_KEYS.has('sid'));
   check('DedeUserID 不标 HttpOnly（站点上本来就不是）', !HTTP_ONLY_COOKIE_KEYS.has('DedeUserID'));
 }
 

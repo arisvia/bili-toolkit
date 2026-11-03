@@ -4,12 +4,15 @@ import { DEVICE_COOKIE_BACKFILL } from '../config.js';
 /**
  * 清洗粘贴的 Cookie：从 DevTools 复制常带换行、制表符，
  * 这里统一成 "; " 分隔。不会破坏 cookie 值本身。
+ * 同时把下划线别名 `bili-jct` 归一成站点真名 `bili_jct` —— 否则它骗过
+ * 「缺 csrf 就不切号」的守卫，却因为不在写回白名单里而根本不会被写进浏览器。
  */
 export function sanitizeCookie(input) {
   return String(input || '')
     .replace(/\r?\n/g, '; ')
     .replace(/\t/g, '; ')
     .replace(/;\s*;/g, '; ')
+    .replace(/\bbili-jct\s*=/g, 'bili_jct=')
     .trim();
 }
 
@@ -61,12 +64,15 @@ export function backfillDeviceCookies(bCookie, aCookie) {
   const b = parseCookie(bCookie);
   const a = parseCookie(aCookie);
 
-  // bili_jct 也允许补齐：它是 CSRF token，不是密码学绑定的身份凭证，
-  // 而番剧 OGV 的 playview 是 POST 接口，必须带 csrf。
-  // 注意必须在提前返回之前判断，否则 B 缺少 bili_jct 时补不上。
-  const needJct = !(b.bili_jct || b['bili-jct']) && !!(a.bili_jct || a['bili-jct']);
+  // csrf 绝不跨账号补。曾经在这里把页面(A)的 bili_jct 补给借用源(B)，
+  // 理由是「csrf 不是密码学绑定的身份凭证」—— 那是错的：csrf 与 SESSDATA 成对
+  // （findings §13），混用就是「B 的登录态 + A 的 csrf」，番剧 OGV 表现为
+  // code=0 但没有视频，静默失败，比缺字段难查得多。
+  // 用 DedeUserID 相等来「证明是同一个号」也不成立：它是可粘贴、可伪造的普通字段，
+  // 且池里允许只存 SESSDATA。所以干脆不补 —— 缺 csrf 由 validateCookie 提示、
+  // 由 switchLoginTo 拒绝切号，如实反映即可。
   const missing = DEVICE_COOKIE_BACKFILL.filter((k) => !b[k] && a[k]);
-  if (!missing.length && !needJct) return bCookie;
+  if (!missing.length) return bCookie;
 
   const parts = String(bCookie).split(';').map((s) => s.trim()).filter(Boolean);
   const have = new Set(parts.map((s) => s.slice(0, s.indexOf('=')).trim()));
@@ -74,7 +80,6 @@ export function backfillDeviceCookies(bCookie, aCookie) {
     if (have.has(k)) continue;
     parts.push(`${k}=${a[k]}`);
   }
-  if (needJct && !have.has('bili_jct')) parts.push('bili_jct=' + (a.bili_jct || a['bili-jct']));
   return parts.join('; ');
 }
 

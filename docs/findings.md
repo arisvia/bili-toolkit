@@ -467,12 +467,31 @@ SESSDATA / bili_jct / sid / DedeUserID(+__ckMd5)
 删除名单必须在**切换前**算（用池内记录的旧账号 Cookie，它就是上次写进去的那份），
 切换后再问就只会拿到新值，差集恒为空。
 
-**HttpOnly 属性要跟着走**：`SESSDATA` / `bili_jct` / `sid` 在站点上本来就是 HttpOnly，
-写成非 HttpOnly 等于凭空把登录态暴露给页面 JS。
-反之 `DedeUserID` / `buvid*` 在站点上本来不是，误加 HttpOnly 会让依赖
+**HttpOnly 属性要跟着走，但 `bili_jct` 必须可读。**
+早期版本把它标成 HttpOnly，后果不是「更安全」而是**投币 / 点赞 / 收藏 / 评论全挂**：
+B 站前端的这些 POST 从 `document.cookie` 读 `bili_jct` 当 csrf 参数，
+读不到 → csrf 为空 → 服务端 -111。
+
+`sid` 在 `credentials/A.txt` 第 7 列同样没有 HttpOnly（前端也不读它），
+但这里**故意保持严格**，仍按 HttpOnly 写 —— 无法证明需要可读时按更严的走。
+`DedeUserID` / `buvid*` 在站点上本就不是，误加标记会让依赖
 `document.cookie` 的页面代码读不到。
 
-**复验**：`npm test`（`test/accounts.test.mjs` 第 [10] 组逐字段断言）。
+**池里没有 bili_jct 的账号不允许切号。** csrf 无法从 SESSDATA 推导（§16），
+而切过去之后浏览器里的 csrf 只能来自池内记录，所以缺了就是一个
+「能播放、但互动全 -111」的登录态。`switchLoginTo` 直接返回失败。
+
+**csrf 也绝不跨账号补。** `backfillDeviceCookies` 只补设备字段；
+`bili_jct` 一律不补 —— `DedeUserID` 是可粘贴、可伪造的普通字段，用它
+「证明是同一个号」不成立。同理，借用源没有 csrf 时 `prepare()` 会
+**删掉页面自带的 csrf**（query 与 body 都删），而不是把 A 的发给服务端：
+`-111` 比「没带 csrf」更难查。
+
+下划线别名 `bili-jct` 在 `sanitizeCookie()` 里归一成 `bili_jct` ——
+否则它能骗过上面的守卫，却因为不在写回白名单里而根本写不进浏览器。
+
+**复验**：`npm test`（`test/accounts.test.mjs` 第 [10]/[12c] 组、
+`test/cookie-parse.test.mjs` 第 [4] 组、`test/proxy.test.mjs` 第 [4] 组）。
 
 ---
 

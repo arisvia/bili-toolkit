@@ -297,6 +297,7 @@ const chk = (n, c, x) => window.__results.push({ n, ok: !!c, x: c ? undefined : 
     chk('bili_jct 一起换（不留旧号的）', bc.get('bili_jct') && bc.get('bili_jct').value === 'c-csrf', bc.get('bili_jct'));
     chk('旧号的 sid 被清掉而不是留用', !bc.has('sid'), [...bc.keys()]);
     chk('SESSDATA 写为 HttpOnly', bc.get('SESSDATA').httpOnly === true);
+    chk('bili_jct 不能 HttpOnly（前端要读它当 csrf）', bc.get('bili_jct') && bc.get('bili_jct').httpOnly !== true, bc.get('bili_jct'));
     chk('DedeUserID 不误标 HttpOnly', bc.get('DedeUserID').httpOnly !== true, bc.get('DedeUserID'));
     chk('当前身份已切到新号', window.__GM['b.accounts'].activeId === 'second00', window.__GM['b.accounts'].activeId);
     chk('切号后触发了页面刷新（首屏 SSR 嵌着旧身份，不刷新仍是旧号）', window.__reloadScheduled > reloadBefore, { before: reloadBefore, after: window.__reloadScheduled });

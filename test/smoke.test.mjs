@@ -87,9 +87,16 @@ console.log('\n[3] Cookie 工具');
   check('缺失的设备 Cookie 被补齐', filled.buvid3 === 'DEV3' && filled.buvid4 === 'DEV4');
   check('身份 Cookie 不会被 A 覆盖', filled.SESSDATA === 'abc');
 
-  const noMix = parseCookie(backfillDeviceCookies('SESSDATA=abc', 'sid=ASID; bili_jct=AJCT'));
+  // csrf 与 SESSDATA 成对（findings §13），任何跨账号补齐都是「B 的登录态 + A 的 csrf」。
+  // DedeUserID 是可粘贴的普通字段，不足以证明是同一个号，所以干脆一律不补。
+  const noMix = parseCookie(backfillDeviceCookies('SESSDATA=abc; DedeUserID=123', 'DedeUserID=999; sid=ASID; bili_jct=AJCT'));
   check('不会混入 A 的 sid', noMix.sid === undefined, JSON.stringify(noMix));
-  check('缺失 bili_jct 时会用 A 的补上（番剧需要）', noMix.bili_jct === 'AJCT');
+  check('不会混入 A 的 bili_jct', noMix.bili_jct === undefined, JSON.stringify(noMix));
+  const sameId = parseCookie(backfillDeviceCookies('SESSDATA=abc; DedeUserID=123', 'DedeUserID=123; bili_jct=AJCT'));
+  check('即使 DedeUserID 相同也不补 csrf（它可伪造）', sameId.bili_jct === undefined, JSON.stringify(sameId));
+
+  // 下划线别名必须归一，否则它会骗过「缺 csrf 不切号」的守卫却写不进浏览器
+  check('bili-jct 别名归一成 bili_jct', parseCookie(sanitizeCookie('SESSDATA=a; bili-jct=J')).bili_jct === 'J', sanitizeCookie('SESSDATA=a; bili-jct=J'));
 
   const masked = maskCookie('SESSDATA=0123456789abcdefghij; DedeUserID=42');
   check('脱敏不泄露完整 SESSDATA', !masked.includes('0123456789abcdefghij') && masked.includes('42'), masked);

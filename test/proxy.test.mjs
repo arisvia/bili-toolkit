@@ -235,6 +235,26 @@ console.log('\n[4] 番剧 OGV：csrf 换成 B 的，body 也同步');
     body: 'ep_id=7&cid=9'
   });
   check('form-urlencoded body 正确用 & 拼接 csrf', seen.data.includes('cid=9&csrf=b-csrf'), seen.data);
+
+  // 借用源没有 csrf 时：必须把页面自带的 A 的 csrf 删掉，
+  // 否则就是「B 的 SESSDATA + A 的 csrf」，服务端 -111，且比不带更难查。
+  const NO_CSRF = 'SESSDATA=b2-secret; DedeUserID=998';
+  const ctx2 = makeContext();
+  ctx2.GM_setValue('b.cookie', NO_CSRF);
+  let seen2 = null;
+  replies.set('https://api.bilibili.com/ogv/player/playview', (rec) => {
+    seen2 = rec;
+    return { text: JSON.stringify({ code: 0, data: { video_info: { quality: 120 } } }) };
+  });
+  const api2 = await loadProxyModule(ctx2);
+  await api2.handleRequest({
+    url: 'https://api.bilibili.com/ogv/player/playview?ep_id=7&cid=9&qn=32&csrf=a-csrf',
+    method: 'POST',
+    body: 'ep_id=7&cid=9&csrf=a-csrf'
+  });
+  check('没有 B 的 csrf 时 query 里的 A 的 csrf 被删掉', !new URL(seen2.url).searchParams.has('csrf'), seen2.url);
+  check('没有 B 的 csrf 时 body 里的 A 的 csrf 被删掉', !/csrf=a-csrf/.test(seen2.data), seen2.data);
+  check('body 其余字段保留', seen2.data.includes('ep_id=7') && seen2.data.includes('cid=9'), seen2.data);
 }
 
 console.log('\n[5] 业务错误 → 回退，不把错误页喂给播放器');

@@ -343,6 +343,7 @@ export const TEXT = {
     fieldFail: '写入失败：',
     fieldsFailed: '部分字段写入失败：',
     noSessdataWrite: '该账号没有 SESSDATA，无法设为登录态',
+    noCsrfWrite: '该账号没有 bili_jct（csrf），切过去后投币/点赞/评论会失败 —— 请重新复制完整 Cookie',
     cookieApiMissing: '当前脚本管理器不支持写入 Cookie',
     partialWrite: '部分字段写入失败，切号可能不完整',
     notFound: '账号不存在',
@@ -376,14 +377,18 @@ export const TEXT = {
     retrying: '重新探测中…',
     /* --- 自检：把「首次不生效」这种静默故障变成可见信号 --- */
     selfCheck: '钩子',
-    selfOk: '已接管 {n} 个请求 · playinfo 已隐藏',
-    selfNoIntercept: '已连接，尚未接管到请求（非视频页属正常）',
+    selfOk: '已借到 {n} 次播放数据 · playinfo 已隐藏',
+    selfNoIntercept: '已连接，尚无代理命中（非视频页属正常；视频页刚打开时也算正常）',
     /** 借用开着、访问器装着，但 SSR 的 __playinfo__ 还能读到 —— 真正的异常 */
-    selfPlayinfoOff: '已接管 {n} 个请求，但 playinfo 仍可读 —— 首屏会走本地缓存',
+    selfPlayinfoOff: '已借到 {n} 次播放数据，但 playinfo 仍可读 —— 首屏会走本地缓存',
     /** 借用总开关关着，此时不隐藏是设计如此，不是故障 */
-    selfPlayinfoNotNeeded: '已接管 {n} 个请求（借用未启用，不屏蔽 playinfo）',
+    selfPlayinfoNotNeeded: '已借到 {n} 次播放数据（借用未启用，不屏蔽 playinfo）',
+    /** 借用关着且还没有任何代理命中 —— 同样是正常状态 */
+    selfNoBorrow: '已连接（借用未启用，不走代理，画质不会提升）',
     selfNoPlayinfo: '__playinfo__ 访问器没装上',
     selfDead: '未连接 —— 本页没有注入钩子',
+    /** 自检提示里的第二行：钩子转交数。预热请求不计入这个数。 */
+    selfHookForward: '\n钩子转交（不含预热请求）：{n}',
     selfCheckTip:
       '自检分三层：脚本有没有跑起来 → 有没有真的接管到播放地址请求 → __playinfo__ 是否被屏蔽。\n' +
       '最难查的故障是「首次不生效、切画质后才行」—— 那时面板此前没有任何信号。',

@@ -137,12 +137,33 @@ function injectCsrf(body, csrf) {
   return (s ? s + (s.endsWith('&') ? '' : '&') : '') + 'csrf=' + encodeURIComponent(csrf);
 }
 
+/** 反向操作：把 body 里的 csrf 删干净（借用源没有 csrf 时用） */
+function stripCsrf(body) {
+  const s = String(body || '');
+  if (!s) return s;
+  if (s.trim().startsWith('{')) {
+    try {
+      const o = JSON.parse(s);
+      if (o && typeof o === 'object') {
+        delete o.csrf;
+        return JSON.stringify(o);
+      }
+    } catch {
+      /* 交给下面的正则兜底 */
+    }
+  }
+  return s
+    .replace(/(^|&)csrf=[^&]*/g, '')
+    .replace(/(^|&)csrf_token=[^&]*/g, '')
+    .replace(/^&/, '');
+}
+
 /**
  * 准备最终的请求：抬高参数 + 注入 csrf + 重签 wbi。
- * @returns {{url:string, body:string, originalBody:string, upgraded:boolean, signed:boolean, note?:string}}
+ * @returns {{url:string, body:string, originalUrl:string, originalBody:string, upgraded:boolean, signed:boolean, note?:string}}
  *
  * `originalBody` 是**没有注入 B 的 csrf** 的 body，专门给「参数被拒后退回原始参数重试」用。
- * 拿不到时为空串（GET 请求）。
+ * 拿不到时为空串（GET 请求）。`originalUrl` 同理（borrow 源没有 csrf 时已删掉页面那个）。
  */
 async function prepare(ep, method, rawUrl, rawBody) {
   const url = new URL(rawUrl);
@@ -152,19 +173,35 @@ async function prepare(ep, method, rawUrl, rawBody) {
   if (csrf) {
     url.searchParams.set('csrf', csrf);
     url.searchParams.delete('csrf_token');
+  } else if (ep.csrf) {
+    // 借用源没有 csrf 时必须**删掉页面自带的**那个：留下就是拿 A 的 csrf 配 B 的
+    // SESSDATA 发出去（findings §13），服务端只会回 -111，比不带更难查。
+    url.searchParams.delete('csrf');
+    url.searchParams.delete('csrf_token');
   }
 
-  let body = method === 'POST' && rawBody ? injectCsrf(rawBody, csrf) : '';
+  // 「原始参数」也必须是清干净 csrf 的版本：重试路径和「拿不到 wbi 密钥」的退回
+  // 都用它，直接用 rawUrl 会把 A 的 csrf 一起发出去。
+  let originalUrl = rawUrl;
+  if (ep.csrf && !csrf) {
+    const o = new URL(rawUrl);
+    o.searchParams.delete('csrf');
+    o.searchParams.delete('csrf_token');
+    originalUrl = o.href;
+  }
+
+  let body = method === 'POST' && rawBody ? (csrf ? injectCsrf(rawBody, csrf) : ep.csrf ? stripCsrf(rawBody) : rawBody) : '';
 
   // 重试要用的「没注入过 B 的 csrf」的 body。
   // 直接拿 rawBody 是不行的：POST 端点被抬高参数时不改 body，
   // 于是 rawBody === prep.body，退回它等于没退。必须显式分开记。
-  const originalBody = method === 'POST' && rawBody ? rawBody : '';
+  // 但 rawBody 里可能带着 A 的 csrf，退回时同样要删干净。
+  const originalBody = method === 'POST' && rawBody ? (ep.csrf && !csrf ? stripCsrf(rawBody) : rawBody) : '';
 
   // wbi 签名：参数动过就必须重签，否则 -403
   const needsSign = ep.wbi === 'required' || (ep.wbi === 'if-present' && hasWbiSignature(url));
   if (!needsSign) {
-    return { url: url.href, body, originalBody, upgraded: true, signed: false };
+    return { url: url.href, body, originalUrl, originalBody, upgraded: true, signed: false };
   }
 
   const mixinKey = await ensureMixinKey();
@@ -173,11 +210,10 @@ async function prepare(ep, method, rawUrl, rawBody) {
       // 拿不到密钥就不要改参数，否则签名必挂；退回原样请求，至少能播放。
       // 这个状态必须让用户看得见 —— 否则表现为「画质死活不升级」且毫无线索。
       stats.signedFallback = (stats.signedFallback || 0) + 1;
-      const orig = new URL(rawUrl);
       const note = '缺少 wbi 密钥，已退回原始参数（画质不升级）';
       log.warn(ep.id, note);
       return {
-        url: orig.href,
+        url: originalUrl,
         body: method === 'POST' && rawBody ? injectCsrf(rawBody, csrf) : '',
         originalBody,
         upgraded: false,
@@ -185,11 +221,11 @@ async function prepare(ep, method, rawUrl, rawBody) {
         note
       };
     }
-    return { url: url.href, body, originalBody, upgraded: true, signed: false, note: '缺少 wbi 密钥，参数已抬高但未重签' };
+    return { url: url.href, body, originalUrl, originalBody, upgraded: true, signed: false, note: '缺少 wbi 密钥，参数已抬高但未重签' };
   }
 
   const signed = signUrl(url, mixinKey);
-  return { url: signed.href, body, originalBody, upgraded: true, signed: true };
+  return { url: signed.href, body, originalUrl, originalBody, upgraded: true, signed: true };
 }
 
 /* ------------------------------------------------------------------ *
@@ -265,7 +301,7 @@ export async function handleProxy(ep, msg) {
       // prepare() 已把 B 的 bili_jct 写进 prep.body。这里若还用 msg.body，
       // 等于把 A 的 csrf 配 B 的 SESSDATA 发出去 —— 服务端必然再拒一次，
       // 重试对最需要它的番剧端点反而永远失败。
-      res = await sendWithB(method, msg.url, buildHeaders(msg.headers, method), prep.originalBody);
+      res = await sendWithB(method, prep.originalUrl, buildHeaders(msg.headers, method), prep.originalBody);
       json = parseJsonSafe(res.text);
     }
 

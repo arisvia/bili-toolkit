@@ -10,7 +10,8 @@
  *   1. **整组换，不换半个。** SESSDATA / bili_jct / sid / DedeUserID 必须同时换成同一个账号的值。
  *      只换 SESSDATA 会得到「B 的登录态 + A 的 csrf」，番剧 OGV 静默失败（code=0 但没有视频）。
  *   2. **删除也要删。** 旧账号独有的字段必须显式删除，否则会残留在浏览器里继续生效。
- *   3. **HttpOnly 属性要跟着走。** 写成非 HttpOnly 等于凭空把登录态暴露给页面 JS。
+ *   3. **HttpOnly 属性要跟着走，但 bili_jct 必须可读。** SESSDATA / sid 写成 HttpOnly；
+ *      bili_jct 写成 HttpOnly 会让前端拿不到 csrf，投币 / 点赞 / 评论一律 -111。
  *
  * 能力探测：不同管理器提供的 API 名字不一样（GM.cookie.* 优先，退回 GM_setCookie）。
  * 两者都没有时如实报告不可用 —— 不能假装成功，也不能拿别的方式糊弄过去。

@@ -303,7 +303,10 @@ console.log('\n[10] 切换登录态：SESSDATA / bili_jct / sid 一起换');
   check('sid 跟着换（不能跨账号沿用）', bc.get('sid').value === 'b-sid', bc.get('sid'));
   check('DedeUserID 跟着换', bc.get('DedeUserID').value === '222');
   check('SESSDATA 保持 HttpOnly', bc.get('SESSDATA').httpOnly === true);
-  check('bili_jct 保持 HttpOnly', bc.get('bili_jct').httpOnly === true);
+  check('sid 也按 HttpOnly 写', bc.get('sid').httpOnly === true);
+  // bili_jct 必须是**可读**的：前端投币/点赞/评论的 csrf 参数从 document.cookie 读，
+  // 写成 HttpOnly 会让这些请求带空 csrf，服务端一律 -111。
+  check('bili_jct 不能标 HttpOnly（否则投币/点赞/评论 -111）', bc.get('bili_jct').httpOnly !== true, bc.get('bili_jct'));
   check('DedeUserID 不该被标 HttpOnly（站点本来就不是）', bc.get('DedeUserID').httpOnly !== true);
   check('SESSDATA 包含持久有效期(非 Session Cookie)', bc.get('SESSDATA').expirationDate > Math.floor(Date.now() / 1000));
   check('bili_jct 包含持久有效期(非 Session Cookie)', bc.get('bili_jct').expirationDate > Math.floor(Date.now() / 1000));
@@ -381,6 +384,22 @@ console.log('\n[12b] 不支持写 Cookie 的管理器如实报告');
   const r = await sw.switchLoginTo(added.id);
   check('切换返回 unsupported 而非假装成功', r.ok === false && r.reason === 'unsupported', r);
   check('也不会误改当前身份', accApi.pool().activeId === 'idA');
+}
+
+console.log('\n[12c] 账号缺 bili_jct 时拒绝切号（写进去就是互动全 -111）');
+{
+  // 池里那条有 DedeUserID 但没 csrf —— 典型是用户只复制了 SESSDATA
+  const NO_CSRF = 'SESSDATA=nj-sess; DedeUserID=444; sid=nj-sid';
+  const ctx = makeContext(seedPool([acc('idA', A_COOKIE, { mid: '111' })], { activeId: 'idA' }));
+  const accApi = await load('src/core/accounts.js', ctx);
+  const added = accApi.addAccount(NO_CSRF, { mid: '444', vipStatus: 1 });
+  const sw = await load('src/core/switcher.js', ctx);
+
+  const r = await sw.switchLoginTo(added.id);
+  check('拒绝切号并给出原因', r.ok === false && !!r.reason, r);
+  check('不刷新页面（否则用户以为成功了）', r.needReload === false);
+  check('一个 Cookie 都没写', ctx.__browserCookies.size === 0, [...ctx.__browserCookies.keys()]);
+  check('当前身份没变', accApi.pool().activeId === 'idA', accApi.pool().activeId);
 }
 
 console.log('\n[13] 重复添加同一账号：去重而非新增');

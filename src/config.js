@@ -117,9 +117,15 @@ export const IDENTITY_COOKIE_KEYS = [
 ];
 
 /**
- * 这些字段在 B 站上本来就是 HttpOnly，写回时必须带上同样的标记。
- * 写成非 HttpOnly 会让页面 JS 突然能读到登录态，凭空扩大暴露面。
- * 刻意只列这三个 —— DedeUserID、buvid* 在站点上本来就不是 HttpOnly，
- * 给它们加上标记会让依赖 document.cookie 的页面代码读不到。
+ * 这些字段写回时必须带上 HttpOnly 标记。
+ *
+ * **`bili_jct` 不在其中** —— 它必须是可读的。曾经把它也列进来，后果不是「更安全」，
+ * 而是**投币 / 点赞 / 收藏 / 评论全挂**：B 站前端这些 POST 的 csrf 参数
+ * 是从 `document.cookie` 读 `bili_jct` 得到的，读不到就是空 csrf，服务端一律 -111。
+ * 依据：DevTools 的 Cookie 表格里 `bili_jct` 的 HttpOnly 一栏是空的（credentials/A.txt 第 7 列）。
+ *
+ * `sid` 在站点上同样不是 HttpOnly，但前端并不读它，这里**故意保持严格**：
+ * 无法证明需要可读时，宁可按更严的写。`DedeUserID` / `buvid*` 则必须可读
+ * （站点本来就如此，加标记会让依赖 document.cookie 的页面代码读不到）。
  */
-export const HTTP_ONLY_COOKIE_KEYS = new Set(['SESSDATA', 'bili_jct', 'sid']);
+export const HTTP_ONLY_COOKIE_KEYS = new Set(['SESSDATA', 'sid']);
