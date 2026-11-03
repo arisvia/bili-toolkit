@@ -5,13 +5,14 @@
  * 否则会被 esbuild 打包进正文代码作为无用死字符串残留。
  */
 
-export const VERSION = '1.3.0';
+export const VERSION = '1.3.1';
 
 export const NAME = 'B站 · 多账号多权益工具箱';
 export const NAME_EN = 'Bilibili Multi-Account Toolkit';
 export const NS = 'bili-toolkit';
 
 export const DESCRIPTION =
+  '【重要：若投币/收藏报CSRF失败，在面板点击当前账号「切到此号」或重新登录一次即可修复】' +
   '多账号无缝漫游、软登出凭据保活、大会员权益借用、4K/杜比画质解锁。' +
   '以主号互动弹幕，借副号大会员取流，左下角胶囊秒切账号。';
 
