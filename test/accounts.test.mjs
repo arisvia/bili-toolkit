@@ -303,7 +303,7 @@ console.log('\n[10] 切换登录态：SESSDATA / bili_jct / sid 一起换');
   check('sid 跟着换（不能跨账号沿用）', bc.get('sid').value === 'b-sid', bc.get('sid'));
   check('DedeUserID 跟着换', bc.get('DedeUserID').value === '222');
   check('SESSDATA 保持 HttpOnly', bc.get('SESSDATA').httpOnly === true);
-  check('sid 也按 HttpOnly 写', bc.get('sid').httpOnly === true);
+  check('sid 同样不能标 HttpOnly（站点上本就不是）', bc.get('sid').httpOnly !== true, bc.get('sid'));
   // bili_jct 必须是**可读**的：前端投币/点赞/评论的 csrf 参数从 document.cookie 读，
   // 写成 HttpOnly 会让这些请求带空 csrf，服务端一律 -111。
   check('bili_jct 不能标 HttpOnly（否则投币/点赞/评论 -111）', bc.get('bili_jct').httpOnly !== true, bc.get('bili_jct'));

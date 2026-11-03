@@ -467,15 +467,50 @@ SESSDATA / bili_jct / sid / DedeUserID(+__ckMd5)
 删除名单必须在**切换前**算（用池内记录的旧账号 Cookie，它就是上次写进去的那份），
 切换后再问就只会拿到新值，差集恒为空。
 
-**HttpOnly 属性要跟着走，但 `bili_jct` 必须可读。**
-早期版本把它标成 HttpOnly，后果不是「更安全」而是**投币 / 点赞 / 收藏 / 评论全挂**：
-B 站前端的这些 POST 从 `document.cookie` 读 `bili_jct` 当 csrf 参数，
-读不到 → csrf 为空 → 服务端 -111。
+**HttpOnly 只有 `SESSDATA` 一个。真机实测（2026-11-03）。**
 
-`sid` 在 `credentials/A.txt` 第 7 列同样没有 HttpOnly（前端也不读它），
-但这里**故意保持严格**，仍按 HttpOnly 写 —— 无法证明需要可读时按更严的走。
-`DedeUserID` / `buvid*` 在站点上本就不是，误加标记会让依赖
-`document.cookie` 的页面代码读不到。
+**证据一（干净环境）**：`credentials/A.txt` 是污染前的 DevTools 12 列导出，
+第 7 列（HttpOnly）只有 `SESSDATA` 是 `✓`，`bili_jct` / `sid` / `DedeUserID` 全空。
+这与站点行为一致：真实浏览器里只有 `SESSDATA` 是 HttpOnly。
+
+**证据二（站点源码）**：`core.befa0edb.js` 的 axios 请求拦截器原文
+
+```js
+w.A.interceptors.request.use(function (n) {
+  var r = '[object Object]' === P(n.data);
+  return /^POST$/i.test(n.method) && r && !n.data.csrf && Object.assign(n.data, { csrf: C.get('bili_jct') }),
+         r && (n.data = R().stringify(n.data)), n;
+});
+```
+
+条件是 `'[object Object]' === P(n.data)`，即只给 **JSON body** 的 POST 补 csrf；
+form-urlencoded 的请求（如点赞 `archive/like`）不走这条，所以它们不带 csrf 也能成功。
+`C.get` 的实现就是解析 `document.cookie`（同 bundle 的 `ty` / `ni` 系列函数）。
+**站点自己都要从 `document.cookie` 读 `bili_jct` —— 标成 HttpOnly 它自己也读不到。**
+
+**expires 精度不能用来判断写入方**：曾试图用「整数 = 脚本写、小数 = 站点写」推断，
+但服务端 `Set-Cookie` 只有秒级精度，整数无法区分两者（`DedeUserID` 的 `.739696`
+只能证明「带小数的必然不是服务端写的」，不能反推整数归属）。该论据已作废。
+能确认的是：**你机器上 `bili_jct` / `sid` 当前是 HttpOnly，与站点行为不符**，
+而 1.3.0 的 `applyAccount` 正是把它们写成 HttpOnly 的代码，改代码不会自动回滚已有写坏的属性。
+
+**站点确实从 `document.cookie` 读 csrf** —— 见上「证据二」的拦截器原文。
+
+**真机对照实验（同一账号、同一视频 `BV1i24P6rEmt`）**：
+
+| 调用 | csrf 来源 | 结果 |
+|---|---|---|
+| `x/v3/fav/resource/deal` 加收藏 | 页面 `document.cookie`（读不到） | **-111 CSRF 校验失败** |
+| `x/v3/fav/resource/deal` 加收藏 | CDP 拿到的真实值 | code 0，收藏夹里确认出现 |
+| `x/v3/fav/resource/deal` 取消收藏 | CDP 真实值 | code 0，确认已移除 |
+| `x/v2/history/toview/add` | 页面 `document.cookie`（读不到） | **-111 CSRF 校验失败** |
+| `x/v2/history/toview/add` | CDP 真实值 | code 0，列表 556→557 |
+| `x/v2/history/toview/del` | CDP 真实值 | code 0，回滚 557→556 |
+| `x/web-interface/coin/add` multiply=1 | 页面 `document.cookie`（读不到） | **-111 CSRF 校验失败** |
+| `x/web-interface/coin/add` multiply=1 | CDP 真实值 | code 0，`coins.multiply` 0→1（投币不可逆，1 枚） |
+
+结论：**故障就出在 HttpOnly 这一个属性上，值与接口都是好的。**
+`DedeUserID` / `buvid*` 误加标记同样会让依赖 `document.cookie` 的代码读不到。
 
 **池里没有 bili_jct 的账号不允许切号。** csrf 无法从 SESSDATA 推导（§16），
 而切过去之后浏览器里的 csrf 只能来自池内记录，所以缺了就是一个

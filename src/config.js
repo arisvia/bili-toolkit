@@ -119,13 +119,16 @@ export const IDENTITY_COOKIE_KEYS = [
 /**
  * 这些字段写回时必须带上 HttpOnly 标记。
  *
- * **`bili_jct` 不在其中** —— 它必须是可读的。曾经把它也列进来，后果不是「更安全」，
- * 而是**投币 / 点赞 / 收藏 / 评论全挂**：B 站前端这些 POST 的 csrf 参数
- * 是从 `document.cookie` 读 `bili_jct` 得到的，读不到就是空 csrf，服务端一律 -111。
- * 依据：DevTools 的 Cookie 表格里 `bili_jct` 的 HttpOnly 一栏是空的（credentials/A.txt 第 7 列）。
+ * **只有 `SESSDATA`**。实测（真实浏览器 Cookie jar + `credentials/A.txt` 的
+ * DevTools 12 列表格第 7 列）B 站只在 SESSDATA 上设 HttpOnly，
+ * `bili_jct` / `sid` / `DedeUserID` 都**不是** HttpOnly。
  *
- * `sid` 在站点上同样不是 HttpOnly，但前端并不读它，这里**故意保持严格**：
- * 无法证明需要可读时，宁可按更严的写。`DedeUserID` / `buvid*` 则必须可读
- * （站点本来就如此，加标记会让依赖 document.cookie 的页面代码读不到）。
+ * `bili_jct` 标成 HttpOnly 的后果不是「更安全」，而是**投币 / 点赞 / 收藏 /
+ * 稍后再看 / 评论全挂**：站点自己的 axios 拦截器就从 `document.cookie` 读它：
+ *
+ *   /^POST$/i.test(method) && !data.csrf && Object.assign(data, { csrf: C.get("bili_jct") })
+ *
+ * 读不到 → csrf 为空 → 服务端一律 -111「CSRF 校验失败」。
+ * 1.3.0 曾把这三个一起标成 HttpOnly，是这一批线上故障的直接原因。
  */
-export const HTTP_ONLY_COOKIE_KEYS = new Set(['SESSDATA', 'sid']);
+export const HTTP_ONLY_COOKIE_KEYS = new Set(['SESSDATA']);
