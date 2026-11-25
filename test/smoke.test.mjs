@@ -207,12 +207,12 @@ console.log('\n[7b] 死导出清理：留着只会让人以为「改这份就够
   // clearConfirm 是文案不是函数，单独查
   check('text.js 已删除 clearConfirm（清空按钮没有确认步骤）', !/^\s*clearConfirm\s*:/m.test(declaredIn('src/core/text.js')));
 
-  // 双份区域逻辑：钩子是字符串化注入的独立作用域，只能各写一份。
-  // 真正的风险是有人只改一边，所以两边都必须留着互相指向的警告。
+  // 共享单一事实源：主世界钩子经 esbuild 直接复用 src/shared/vip.js 与 src/shared/region.js，不再手写双份副本。
   const hook = fs.readFileSync(path.join(ROOT, 'src/injected/hook.js'), 'utf8');
   const region = fs.readFileSync(path.join(ROOT, 'src/core/region.js'), 'utf8');
-  check('钩子那份 patchSsRegion 标明了自己是副本', /独立副本[\s\S]{0,120}?不是引用/.test(hook));
-  check('region.js 指向了钩子那份', /src\/injected\/hook\.js/.test(region));
+  check('hook.js 直接复用 src/shared/vip.js', /\.\.\/shared\/vip\.js/.test(hook));
+  check('hook.js 直接复用 src/shared/region.js', /\.\.\/shared\/region\.js/.test(hook));
+  check('region.js 指向共享实现 src/shared/region.js', /\.\.\/shared\/region\.js/.test(region));
 }
 
 console.log('\n[8] 钩子源码与自检协议');
@@ -220,12 +220,8 @@ console.log('\n[8] 钩子源码与自检协议');
   const hook = fs.readFileSync(path.join(ROOT, 'src/injected/hook.js'), 'utf8');
   check('占位符存在且唯一', hook.split('__BILI_VIP_CFG__').length - 1 === 1);
 
-  // 自检协议：钩子必须能在被问到时如实汇报，且汇报的字段名要和沙箱读的一致。
-  // 这些字段名是跨 postMessage 的契约，改名不会报错，只会静默显示「未连接」。
   check('钩子响应 ping', /d\.type === 'ping'/.test(hook));
   check('回的是 pong', /type: 'pong'/.test(hook));
-  // 字段名的契约跨三个文件：钩子产出 → bus 收下 → panel 读出来渲染。
-  // 任何一环改名都不会报错，只会让诊断区永远显示「未连接」。
   const bus = fs.readFileSync(path.join(ROOT, 'src/core/bus.js'), 'utf8');
   const panel = fs.readFileSync(path.join(ROOT, 'src/ui/panel.js'), 'utf8');
   for (const f of ['intercepted', 'playinfoHooked', 'playinfoHidden']) {
@@ -234,19 +230,24 @@ console.log('\n[8] 钩子源码与自检协议');
   }
   check('bus 会存下钩子回的状态', /case 'pong'/.test(bus) && /hookSelfCheck = d\.state/.test(bus));
   check('bus 提供 pingHook 与 getHookSelfCheck', /export function pingHook/.test(bus) && /export function getHookSelfCheck/.test(bus));
-  // 计数必须挂在唯一的转交点上，否则「已接管 N 个请求」恒为 0
   check('计数挂在 callSandbox 的投递处', /payload\.token = token;[\s\S]{0,200}?intercepted\+\+/.test(hook));
   check('__playinfo__ 装成功后置位', /playinfoHooked = true/.test(hook));
-  // playinfoHidden 必须要求「装上了」且「读出来是 undefined」，两者缺一不可
   check('playinfoHidden 要求访问器已装上', /playinfoHidden: playinfoHooked && hidden/.test(hook));
-  let parses = true;
+  let bundled = '';
   try {
-    await esbuild.transform(hook.replace('__BILI_VIP_CFG__', '{}'), { loader: 'js' });
+    bundled = (
+      await esbuild.build({
+        entryPoints: [path.join(ROOT, 'src/injected/hook.js')],
+        bundle: true,
+        format: 'iife',
+        minify: true,
+        write: false
+      })
+    ).outputFiles[0].text;
   } catch (e) {
-    parses = false;
     console.error(e.message);
   }
-  check('语法可解析', parses);
+  check('钩子模块可独立打包且保留唯一占位符', bundled.length > 0 && bundled.split('__BILI_VIP_CFG__').length - 1 === 1);
 }
 
 console.log('\n[9] 构建产物');
@@ -357,8 +358,8 @@ console.log('\n[11] 编码偏好重排');
   // 4) 兼容 AVC
   const patched = JSON.parse(patchJsonText(rawJson, { codec: 'avc' }));
   check('兼容 AVC 时 112 档位首选 AVC 编码', patched.data.dash.video[3].codecid === 7);
-  // 5) 音频流重排：按带宽/高码率降序排
-  const rawWithAudio = JSON.parse(JSON.stringify({
+  // 5) 音频流重排：即便 patchVip=false 且 codec='auto' 也不会被短路跳过
+  const audioJson = JSON.stringify({
     data: {
       dash: {
         video: [{ id: 120, codecid: 7 }],
@@ -369,10 +370,36 @@ console.log('\n[11] 编码偏好重排');
         ]
       }
     }
-  }));
-  reorderStreams(rawWithAudio, 'auto');
-  const aList = rawWithAudio.data.dash.audio;
+  });
+  const audioPatched = JSON.parse(patchJsonText(audioJson, { patchVip: false, region: 'off', codec: 'auto' }));
+  const aList = audioPatched.data.dash.audio;
   check('音频流按带宽降序排列 (30280 192k 优先)', aList[0].id === 30280 && aList[1].id === 30232 && aList[2].id === 30216);
+
+  // 6) 官源 CDN 优选：将 PCDN / MCDN 降权到备选末尾
+  const { reorderCdnUrls } = await load('src/core/patch.js');
+  const cdnRaw = JSON.stringify({
+    data: {
+      dash: {
+        video: [
+          {
+            id: 120,
+            codecid: 12,
+            baseUrl: 'https://xy123x45.mcdn.bilivideo.cn:4480/v1/stream.m4s',
+            backupUrl: [
+              'https://p1.szbdyd.com/v1/stream.m4s',
+              'https://upos-sz-mirrorcos.bilivideo.com/v1/stream.m4s'
+            ]
+          }
+        ]
+      }
+    }
+  });
+  const cdnPatched = JSON.parse(patchJsonText(cdnRaw, { patchVip: false, region: 'off', codec: 'auto', preferCdn: true }));
+  const v0 = cdnPatched.data.dash.video[0];
+  check('官源 UPOS 镜像节点被提至 baseUrl', v0.baseUrl.includes('upos-sz-mirrorcos.bilivideo.com'), v0.baseUrl);
+  check('PCDN/MCDN 被降权至 backupUrl', v0.backupUrl.every((u) => u.includes('mcdn') || u.includes('szbdyd')), v0.backupUrl);
+  check('未开启 preferCdn 时不改动原有 CDN 顺序', JSON.parse(patchJsonText(cdnRaw, { patchVip: false, region: 'off', codec: 'auto', preferCdn: false })).data.dash.video[0].baseUrl.includes('mcdn'));
+  check('reorderCdnUrls 返回调整计数', reorderCdnUrls(JSON.parse(cdnRaw)) === 1);
 }
 console.log('\n[12] 扫码登录凭据提取与矢量二维码');
 {
@@ -410,6 +437,24 @@ console.log('\n[13] CHANGELOG 版本条目解析');
   const byCleanVer = extractChangelog('1.1.0', sample);
   check('支持无 v 前缀匹配', byCleanVer.includes('条目 2'), byCleanVer);
 }
+
+console.log('\n[14] 加密备份导出与解密往返');
+{
+  const { encryptBackup, decryptBackup } = await load('src/core/backup.js');
+  const sample = { exportedAt: 12345, accounts: [{ cookie: 'SESSDATA=abc; bili_jct=xyz', label: 'VIP' }], settings: { preferCdn: true } };
+  const enc = await encryptBackup(sample, 'pass-1234');
+  check('密文不含明文凭据', !enc.includes('SESSDATA=abc') && enc.includes('bili-toolkit-backup'));
+  const dec = await decryptBackup(enc, 'pass-1234');
+  check('正确口令无损还原账号与设置', dec.accounts[0].cookie === 'SESSDATA=abc; bili_jct=xyz' && dec.settings.preferCdn === true);
+  let wrongPwdFailed = false;
+  try {
+    await decryptBackup(enc, 'wrong-pass');
+  } catch {
+    wrongPwdFailed = true;
+  }
+  check('错误口令明确拒绝解密', wrongPwdFailed);
+}
+
 console.log('');
 if (failed) {
   console.error(`\x1b[31m${failed} 项失败\x1b[0m`);

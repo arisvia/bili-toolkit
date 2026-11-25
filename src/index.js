@@ -10,14 +10,15 @@
 import hookSource from './injected/hook.js';
 import { setToken, startBus, pushConfig } from './core/bus.js';
 import { injectHook, liveConfig } from './core/inject.js';
-import { store } from './core/store.js';
+import { store, SYNC_KEYS } from './core/store.js';
+import { resetCache } from './core/proxy.js';
 import { setDebug, log, printBanner } from './core/log.js';
 import { TEXT } from './core/text.js';
 import { mountPanel, refreshPanel } from './ui/panel.js';
 import { registerMenus } from './ui/menu.js';
 import { cookieProblem, ensureMixinKey, hasCookie } from './core/session.js';
 import { pool, resolveBorrow } from './core/accounts.js';
-import { restorePlaybackProgress } from './core/switcher.js';
+import { restorePlaybackProgress, invalidateBrowserWho } from './core/switcher.js';
 function randomToken() {
   const buf = new Uint32Array(4);
   try {
@@ -82,6 +83,13 @@ function boot() {
   mountPanel();
   registerMenus();
   restorePlaybackProgress();
+  store.onChange(SYNC_KEYS, (key, _oldVal, _newVal, remote) => {
+    if (!remote) return;
+    resetCache();
+    if (key === 'b.accounts') invalidateBrowserWho();
+    pushConfig(liveConfig());
+    refreshPanel();
+  });
   // 没有可用账号时给一次性提示，避免用户对着「画质没变」发呆
   if (store.isEnabled() && !hasCookie()) {
     setTimeout(() => {

@@ -8,6 +8,7 @@
  *  4. 交由 switcher 添加入池并同步切换浏览器登录态。
  */
 import { renderSVG } from 'uqr';
+import { IDENTITY_COOKIE_KEYS } from '../config.js';
 import { httpRequest, parseJsonSafe } from './transport.js';
 import { sanitizeCookie } from './cookie.js';
 
@@ -64,7 +65,7 @@ export function extractCookies(urlStr, headersRaw) {
     try {
       const u = new URL(urlStr);
       for (const [k, v] of u.searchParams.entries()) {
-        if (v && ['SESSDATA', 'bili_jct', 'DedeUserID', 'DedeUserID__ckMd5', 'sid'].includes(k)) {
+        if (v && IDENTITY_COOKIE_KEYS.includes(k)) {
           map.set(k, v);
         }
       }

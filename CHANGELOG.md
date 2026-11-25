@@ -3,17 +3,24 @@
 本项目所有显著变更均记录于此文件。
 版本格式遵循 [语义化版本 2.0.0 (SemVer)](https://semver.org/lang/zh-CN/)。
 
-## [v1.3.2] - 2026-11-25
+## [v1.4.0] - 2026-11-25
+
+### 新增特性 (Features)
+- **官源 CDN 优选（降权 PCDN）**：新增「官源 CDN」开关，自动识别并将 `upos-*-mirror*.bilivideo.com` 等官源节点提升至首选，将已知卡顿的 `mcdn` / `szbdyd` / 非常规高端口 PCDN 节点降权至备选末尾。
+- **账号池加密备份与跨设备迁移**：基于浏览器原生 Web Crypto（PBKDF2-SHA256 + AES-GCM，零外部依赖）支持口令加密导出/导入账号池与偏好设置，导入时安全合并并保留备注。
+- **多大会员自动故障切换与批量重探**：借用账号返回 `-101` 失效时自动切换池内下一个有效大会员账号重试当次播放请求；多账号池支持「全部重探」串行节流刷新。
+- **跨标签页实时同步与快捷操作**：接入 `GM_addValueChangeListener` 实现多标签页账号池与配置变更自动同步；支持 `Alt+Shift+B` 全局快捷键开关面板，左下角微缩胶囊托盘新增「权益借用」一键快切开关。
 
 ### 优化与修复 (Improvements & Fixes)
-- **番剧 / 电影首屏接管修复**：新版 Next.js 番剧页改用 `GET /ogv/player/playview`，原端点表只登记了 POST，导致页面首屏取流完全绕过代理；现同时登记 GET（无 csrf）与 POST（旧版，保留 csrf）两种形态。
-- **nanoPlayer requestConfig 净化**：页面在 `createPlayer` 之后会通过 `player.updateRequestConfig` 重新塞回 `reqHttpPlayUrlInfo` / `reqHttpPlayUrlInfoScope`；现包装该方法并删除这两个字段，强制播放器回落到已接管的 `/pgc/player/web/v2/playurl`。
-- **大会员画质提升**：删除新版页面携带的 `is_qn_trial=1` 试看标记，避免服务端把借用账号的大会员画质按试看流降级。
-- **番剧预热修正**：`tryPrefetch` 的番剧分支改为 GET，补 `biz_type=ogv&scene=normal`，并从 `__PLAYURL_HYDRATE_DATA__.result.arc` 兜底取 `cid`（新版页面没有 `__INITIAL_STATE__`）。
-- **首屏账号池覆盖修复**：脚本管理器在 `document-start` 首次读取 GM 存储时可能尚未注入完成，旧逻辑会把空账号池写回 `b.accounts`，导致首次进入番剧/影视页始终用当前未开通大会员的账号取流，必须刷新一次才恢复。现在无账号数据时不写空池，空池仅在用户主动增删账号时落盘。
-- **首屏接管与会员 UI 解耦**：将配置拆分为 `hidePlayinfo`（挡 SSR 与净化 `updateRequestConfig`）、`canBorrow`（总开关 + 有可用账号，控制播放器接管与重载）与 `patchVip`（总开关 + 界面伪装 + 有可用账号，控制会员 UI 与弹窗清理），避免总开关关闭、空账号池或关闭界面伪装时出现误干预；首屏若 GM 存储尚未就绪则静默等待并按状态变化补推配置。
-- **首屏提示条 / 收银台清理**：番剧/影视首屏的「本片是大会员专享内容 / 试看中」提示条涵盖 `.bpx-player-toast-item` 与 Next.js `PromptBar_container`，会员购买弹窗为 `#BilibiliVipDialog` / `paywallView_container`；现仅在 `patchVip` 启用时用 MutationObserver 按需清理，并在关闭时断开监听。
-- **晚到 player 接管**：用户脚本晚于页面内联脚本注入时，`window.player` 已创建会绕过 `createPlayer` 钩子；现接管现有 `window.player`、后续赋值及延迟就绪实例，仅在番剧页或存在 `window.nano` 时按需监听，避免非播放页空转轮询。
+- **番剧 / 电影首屏接管修复**：同时登记 `GET` 与 `POST` 两种 `/ogv/player/playview` 端点；包装 `player.updateRequestConfig()` 持续净化 `reqHttpPlayUrlInfo` / `reqHttpPlayUrlInfoScope`；删除新版页面携带的 `is_qn_trial=1` 试看降级参数；番剧预热改为 `GET` 并兼容 `__PLAYURL_HYDRATE_DATA__`。
+- **三开关职责解耦与首屏竞态修复**：拆分 `hidePlayinfo` / `canBorrow` / `patchVip`，修复总开关关闭、空账号池、关闭界面伪装时的误干预问题；`pool()` 无数据时不再写回空池；支持晚到 `window.player` 接管与 PromptBar / 收银台按需清理，并收敛轮询与 MutationObserver 开销。
+- **`-10403` 误杀防护**：区分地区版权限制 / 付费点播等非账号原因的 `-10403`，不再误将正常大会员账号标记为凭据失效。
+- **首屏预热缓存归一化**：`cacheKey` 归一化为业务主键（`bvid` / `ep_id` / `cid` / `drm_tech_type` 与画质编码配置），屏蔽 `gaia_source` / `session` / `w_rid` / `wts` 等动态参数，使 `prefetch` 预热结果真正命中。
+- **音频重排与切号差集修正**：修复关闭界面伪装且编码为默认时高码率音频排序被短路跳过的缺陷；切号计算待删旧字段时改用当前登录账号而非借用源。
+
+### 架构与工程瘦身 (Refactoring)
+- **主世界钩子模块化与压缩打包**：抽离 `src/shared/vip.js` 与 `src/shared/region.js` 作为沙箱与钩子的单一事实源，消除双份维护；`src/injected/` 拆分为 `hook.js` / `emulate.js` / `nano.js` / `prefetch.js`，经 `esbuild` 独立打包压缩后内联，在新增多项功能的同时将最终产物体积回落至 ~135 KB。
+- **悬浮面板按职责拆分**：将 1,600+ 行的 `src/ui/panel.js` 拆分为 `styles.js` / `dom.js` / `dock.js` / `panel.js`，并同步纳入静态文案规范检查。
 
 ## [v1.3.1] - 2026-11-03
 

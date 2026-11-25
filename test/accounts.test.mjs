@@ -748,6 +748,58 @@ console.log('\n[21] 切号播放进度记忆与热恢复');
   check('记录的播放时间精确一致', parsed.time === 156.4);
   check('记录的播放状态为非暂停', parsed.paused === false);
 }
+
+console.log('\n[22] 当前登录号 A 与借用号 B 不同时，切到 C 仍按 A 计算待删旧字段');
+{
+  const A_WITH_SID = 'SESSDATA=a-sess; bili_jct=a-csrf; DedeUserID=111; sid=a-only-sid';
+  const B_NO_SID = 'SESSDATA=b-sess; bili_jct=b-csrf; DedeUserID=222';
+  const C_NO_SID = 'SESSDATA=c-sess; bili_jct=c-csrf; DedeUserID=333';
+  const ctx = makeContext(
+    seedPool(
+      [
+        acc('idA', A_WITH_SID, { mid: '111', vipStatus: 0 }),
+        acc('idB', B_NO_SID, { mid: '222', vipStatus: 1 }),
+        acc('idC', C_NO_SID, { mid: '333', vipStatus: 0 })
+      ],
+      { activeId: 'idA', borrowId: 'idB' }
+    ),
+    { writable: true }
+  );
+  const sw = await load('src/core/switcher.js', ctx);
+  const res = await sw.switchLoginTo('idC');
+  check('切到 C 成功', res.ok === true && res.needReload === true);
+  check('A 独有的 sid 被正确识别并删除（即使借用号 B 没有 sid）', res.stale.includes('sid'), res.stale);
+}
+
+console.log('\n[23] 加密备份导出与安全合并导入');
+{
+  const ctx1 = makeContext(
+    seedPool([acc('idB', B_COOKIE, { mid: '222', uname: '大会员B', vipStatus: 1, label: '我的主力VIP' })], { activeId: 'idB' })
+  );
+  ctx1.crypto = globalThis.crypto;
+  ctx1.btoa = globalThis.btoa;
+  ctx1.atob = globalThis.atob;
+  ctx1.TextEncoder = globalThis.TextEncoder;
+  ctx1.TextDecoder = globalThis.TextDecoder;
+  ctx1.Uint8Array = globalThis.Uint8Array;
+  const sw1 = await load('src/core/switcher.js', ctx1);
+  const exported = await sw1.exportEncryptedBackup('secret-2026');
+  check('导出加密备份成功', exported.ok === true && exported.count === 1 && !exported.text.includes('b-sess'));
+
+  const ctx2 = makeContext({});
+  ctx2.crypto = globalThis.crypto;
+  ctx2.btoa = globalThis.btoa;
+  ctx2.atob = globalThis.atob;
+  ctx2.TextEncoder = globalThis.TextEncoder;
+  ctx2.TextDecoder = globalThis.TextDecoder;
+  ctx2.Uint8Array = globalThis.Uint8Array;
+  const sw2 = await load('src/core/switcher.js', ctx2);
+  const imported = await sw2.importEncryptedBackup(exported.text, 'secret-2026', { applySettings: true });
+  check('新环境成功解密并导入 1 个账号', imported.ok === true && imported.added === 1, imported);
+  const o2 = sw2.overview();
+  check('导入账号保留备注名与大会员状态', o2.rows.length === 1 && o2.rows[0].label === '我的主力VIP' && o2.rows[0].vip === true, o2.rows);
+}
+
 if (failed) {
   console.error(`\x1b[31m${failed} 项失败\x1b[0m`);
   process.exit(1);

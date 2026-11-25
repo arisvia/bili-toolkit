@@ -134,6 +134,7 @@ export const TEXT = {
       autoBorrow: '恢复自动',
       autoImport: '一键加入池子',
       recheck: '重探',
+      recheckAll: '全部重探',
       rename: '改名',
       renameAsk: '给这个账号起个名字',
       remove: '移除'
@@ -169,6 +170,7 @@ export const TEXT = {
       invalidTip: '接口返回账号未登录或大会员被吊销(code=-101/-10403)。请点击重探或重新扫码录入。',
       autoBorrowTip: '解除手动锁定，恢复为系统自动挑选借用来源',
       recheckTip: '联网核验该账号的昵称、头像与大会员状态',
+      recheckAllTip: '依次核验池内全部账号的会员状态',
       /**
        * 池里记着 activeId，但浏览器实际登录的不是它 —— 多半是用户在别处换了登录。
        * 这种状态下最危险的是界面还在显示「登录中」：用户会以为池子是准的。
@@ -176,6 +178,8 @@ export const TEXT = {
        */
       browserMismatch: '池里记着这个号是当前登录，但浏览器实际登录的不是它 —— 多半是在别处换了登录。借用照常工作，但「登录中」的标记已不可信；切号或加入池子后会自动对齐。',
       rechecking: '重新探测中…',
+      recheckingAll: '正在批量重探…',
+      recheckAllDone: '全部重探完成：',
       renamed: '已改名'
     },
     helpTitle: '切号与借用的区别',
@@ -280,12 +284,30 @@ export const TEXT = {
     borrow: '权益借用',
     ui: '界面伪装',
     prefetch: '预取',
+    preferCdn: '官源 CDN',
+    preferCdnTip: '优先使用官源 UPOS 节点，将已知卡顿的 PCDN / MCDN 降权到备选末尾',
     softLogout: '软登出保活',
     debug: '调试日志',
     on: '开',
     off: '关',
     enabled: '启用',
     disabled: '停用'
+  },
+
+  /* --- 加密备份 --- */
+  backup: {
+    title: '加密备份与迁移',
+    exportBtn: '导出加密备份',
+    importBtn: '导入加密备份',
+    pwdPromptExport: '请设置备份加密口令（至少 4 位，用于跨设备导入解密）：',
+    pwdPromptImport: '请输入该备份的解密口令：',
+    importPasteAsk: '请粘贴加密备份 JSON 内容：',
+    importApplySettings: '是否同时恢复备份中的画质/编码/开关等偏好设置？',
+    exportedOk: '加密备份已复制到剪贴板并触发下载',
+    exportedDownloaded: '加密备份已下载为 JSON 文件',
+    importedOk: '备份导入成功：',
+    failed: '备份操作失败：',
+    emptyPool: '账号池为空，暂无可导出的账号'
   },
 
   /* --- 启动期的一次性提示 --- */
@@ -364,7 +386,8 @@ export const TEXT = {
     switching: '正在切号…',
     currentBadge: '当前',
     vipBadge: '大会员',
-    hoverTip: '悬停快捷切号'
+    hoverTip: '悬停快捷切号 · Alt+Shift+B 开关面板',
+    toggleBorrow: '权益借用'
   },
 
   /* --- 诊断 --- */

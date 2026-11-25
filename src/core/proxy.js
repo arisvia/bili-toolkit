@@ -261,15 +261,65 @@ async function sendWithB(method, url, headers, body) {
 /* ------------------------------------------------------------------ *
  * mode: proxy
  * ------------------------------------------------------------------ */
-function cacheKey(ep, url, body) {
-  return `${ep.id}|${url}|${body ? body.length + ':' + body.slice(0, 64) : ''}`;
+/**
+ * 归一化缓存键：只保留决定响应内容的业务主键与当前代理配置，
+ * 屏蔽掉 gaia_source / session / w_rid / wts / is_qn_trial 等页面动态参数，
+ * 让首屏 prefetch 预热结果能被播放器的真实请求真正命中。
+ */
+export function cacheKey(ep, url, body) {
+  let identity = url;
+  try {
+    const u = new URL(url);
+    const sp = u.searchParams;
+    const parts = [];
+    const bvid = sp.get('bvid');
+    const avid = sp.get('avid') || sp.get('aid');
+    const cid = sp.get('cid');
+    const epId = sp.get('ep_id');
+    const seasonId = sp.get('season_id');
+    const roomId = sp.get('room_id');
+    const drm = sp.get('drm_tech_type');
+    if (bvid) parts.push('bvid=' + bvid);
+    else if (avid) parts.push('avid=' + avid);
+    if (epId) parts.push('ep=' + epId);
+    else if (seasonId) parts.push('ss=' + seasonId);
+    if (cid) parts.push('cid=' + cid);
+    if (roomId) parts.push('room=' + roomId);
+    if (drm) parts.push('drm=' + drm);
+    if (parts.length) identity = parts.join('&');
+  } catch {
+    /* 非法 URL 回退原串 */
+  }
+  const cfgKey =
+    (ep.kind === 'live' ? store.getLiveQn() : store.getQuality()) +
+    ':' +
+    store.getCodec() +
+    ':' +
+    (store.isPreferCdn() ? '1' : '0') +
+    ':' +
+    store.getRegion() +
+    ':' +
+    (store.isPatchUi() ? '1' : '0');
+  return `${ep.id}|${identity}|${cfgKey}|${body ? body.length + ':' + body.slice(0, 64) : ''}`;
 }
 
 /**
  * 这些业务码很可能是「抬高参数 / 重签名」引起的，用原始参数再试一次。
- * 其它码（如 -10403 大会员专享、-101 未登录）重试没有意义，直接回退给页面。
+ * 其它码（如 -10403 大会员专享、-101 未登录）重试没有意义，直接回退或切换账号。
  */
 const RETRY_ON_ORIGINAL = new Set([-400, -403, -404, -405, -412]);
+
+/**
+ * -10403 不仅代表大会员失效，B 站在地区版权限制、单点付费、充电专属影片上也会返回 -10403。
+ * 命中这类内容级限制时绝不能把正常的大会员账号误标为失效。
+ */
+const CONTENT_RESTRICTION_RE = /地区|区域|版权|境外|境内|付费|单点|购买|点播|充电|限免|仅限|area|region|copyright/i;
+
+function isAccountEntitlementFailure(code, message) {
+  if (code === -101) return true;
+  if (code === -10403) return !CONTENT_RESTRICTION_RE.test(String(message || ''));
+  return false;
+}
 
 export async function handleProxy(ep, msg) {
   const method = msg.method || 'GET';
@@ -291,64 +341,78 @@ export async function handleProxy(ep, msg) {
   const myGen = cacheGeneration();
 
   const result = await coalesce(key, async () => {
-    const prep = await prepare(ep, method, msg.url, msg.body);
     const headers = buildHeaders(msg.headers, method);
+    const triedIds = new Set();
 
-    let res = await sendWithB(method, prep.url, headers, prep.body);
+    for (let failover = 0; failover < 2; failover++) {
+      const curBorrowId = borrowAccountId();
+      if (curBorrowId) triedIds.add(curBorrowId);
 
-    // 业务错误：签名/参数被拒则退回未抬高参数的原始请求再试一次
-    let json = parseJsonSafe(res.text);
-    if (res.ok && json && json.code !== 0 && prep.upgraded && RETRY_ON_ORIGINAL.has(json.code)) {
-      log.warn(`${ep.id} 参数被拒（code=${json.code}），退回原始参数重试`);
-      // 必须连 body 一起退回：POST 端点（/ogv/player/playview、/ogv/player/playurl）是 csrf:true，
-      // prepare() 已把 B 的 bili_jct 写进 prep.body。这里若还用 msg.body，
-      // 等于把 A 的 csrf 配 B 的 SESSDATA 发出去 —— 服务端必然再拒一次，
-      // 重试对最需要它的番剧端点反而永远失败。
-      res = await sendWithB(method, prep.originalUrl, buildHeaders(msg.headers, method), prep.originalBody);
-      json = parseJsonSafe(res.text);
-    }
+      const prep = await prepare(ep, method, msg.url, msg.body);
+      let res = await sendWithB(method, prep.url, headers, prep.body);
 
-    if (!res.ok) {
-      stats.proxyFail++;
-      stats.lastError = `${ep.id} ${res.error || 'HTTP ' + res.status}`;
-      log.warn(`代理失败 ${ep.id}：${res.error || 'HTTP ' + res.status}，已回退为 A 账号原始请求`);
-      return { passthrough: true };
-    }
-
-    if (json && json.code !== 0) {
-      stats.proxyFail++;
-      stats.lastError = `${ep.id} code=${json.code} ${json.message || ''}`;
-      log.warn(`代理返回业务错误 ${ep.id}：code=${json.code} ${json.message || ''}`);
-      if (json.code === -101 || json.code === -10403) {
-        const curBorrowId = borrowAccountId();
-        if (curBorrowId) markInvalid(curBorrowId, `${json.code} ${json.message || ''}`);
+      // 业务错误：签名/参数被拒则退回未抬高参数的原始请求再试一次
+      let json = parseJsonSafe(res.text);
+      if (res.ok && json && json.code !== 0 && prep.upgraded && RETRY_ON_ORIGINAL.has(json.code)) {
+        log.warn(`${ep.id} 参数被拒（code=${json.code}），退回原始参数重试`);
+        // 必须连 body 一起退回：POST 端点（/ogv/player/playview、/ogv/player/playurl）是 csrf:true，
+        // prepare() 已把 B 的 bili_jct 写进 prep.body。这里若还用 msg.body，
+        // 等于把 A 的 csrf 配 B 的 SESSDATA 发出去 —— 服务端必然再拒一次，
+        // 重试对最需要它的番剧端点反而永远失败。
+        res = await sendWithB(method, prep.originalUrl, buildHeaders(msg.headers, method), prep.originalBody);
+        json = parseJsonSafe(res.text);
       }
-      return { passthrough: true };
+
+      if (!res.ok) {
+        stats.proxyFail++;
+        stats.lastError = `${ep.id} ${res.error || 'HTTP ' + res.status}`;
+        log.warn(`代理失败 ${ep.id}：${res.error || 'HTTP ' + res.status}，已回退为 A 账号原始请求`);
+        return { passthrough: true };
+      }
+
+      if (json && json.code !== 0) {
+        stats.proxyFail++;
+        stats.lastError = `${ep.id} code=${json.code} ${json.message || ''}`;
+        log.warn(`代理返回业务错误 ${ep.id}：code=${json.code} ${json.message || ''}`);
+        if (isAccountEntitlementFailure(json.code, json.message) && curBorrowId) {
+          markInvalid(curBorrowId, `${json.code} ${json.message || ''}`);
+          const nextBorrowId = borrowAccountId();
+          // 池内仍有其他可用大会员账号时自动切换重试一次，避免当次播放直接降级
+          if (failover === 0 && nextBorrowId && !triedIds.has(nextBorrowId)) {
+            log.info(`已自动切换至备用账号重试 ${ep.id}`);
+            continue;
+          }
+        }
+        return { passthrough: true };
+      }
+
+      const summary = summarize(res.text);
+      stats.proxyOk++;
+      stats.lastEndpoint = ep.id;
+      setCurrentMedia(ep.id, summary, false);
+      log.info(
+        `代理成功 ${ep.id}${prep.upgraded ? '（已抬高画质参数' + (prep.signed ? '并重签 wbi）' : '）') : '（原始参数）'}` +
+          ` 画质=${summary.quality ?? '-'} 码流=${summary.videoStreams.length} 条` +
+          (prep.note ? ` [${prep.note}]` : '')
+      );
+
+      const patched = patchJsonText(res.text, {
+        patchVip: store.isPatchUi(),
+        region: store.getRegion(),
+        codec: store.getCodec(),
+        preferCdn: store.isPreferCdn()
+      });
+      return {
+        passthrough: false,
+        status: res.status,
+        statusText: res.statusText || 'OK',
+        body: patched,
+        headersRaw: res.headersRaw,
+        summary
+      };
     }
 
-    const summary = summarize(res.text);
-    stats.proxyOk++;
-    stats.lastEndpoint = ep.id;
-    setCurrentMedia(ep.id, summary, false);
-    log.info(
-      `代理成功 ${ep.id}${prep.upgraded ? '（已抬高画质参数' + (prep.signed ? '并重签 wbi）' : '）') : '（原始参数）'}` +
-        ` 画质=${summary.quality ?? '-'} 码流=${summary.videoStreams.length} 条` +
-        (prep.note ? ` [${prep.note}]` : '')
-    );
-
-    const patched = patchJsonText(res.text, {
-      patchVip: store.isPatchUi(),
-      region: store.getRegion(),
-      codec: store.getCodec()
-    });
-    return {
-      passthrough: false,
-      status: res.status,
-      statusText: res.statusText || 'OK',
-      body: patched,
-      headersRaw: res.headersRaw,
-      summary
-    };
+    return { passthrough: true };
   });
 
   if (!result.passthrough && ttl > 0 && myGen === cacheGeneration()) {

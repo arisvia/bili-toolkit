@@ -97,6 +97,10 @@ B 账号 + qn=127  → quality=120/4K      ← 账号与参数都到位
 | **参数抬高** | `qn` / `fnval` / `fourk` 抬到预设档位，并重签 `w_rid` 与 `wts` |
 | **编码偏好** | 同一分辨率内按偏好选择 AV1 / HEVC / AVC 编码，优先硬件硬解降低发热 |
 | **高码率音轨** | 自动索要并优先选择 320k / 192k 极高码率音频流 |
+| **官源 CDN 优选** | 自动识别并优先官源 UPOS 节点，将卡顿的 `mcdn` / `szbdyd` / 非常规端口 PCDN 降权至末尾 |
+| **多大会员自动故障切换** | 借用账号返回 `-101` 失效时自动切换池内下一个有效大会员账号重试当次播放，并支持「全部重探」 |
+| **加密备份与迁移** | 基于 Web Crypto（PBKDF2-SHA256 + AES-GCM）口令加密导出/导入账号池与偏好，零依赖跨设备迁移 |
+| **跨标签页同步与快捷键** | 多标签页账号池与开关实时同步；支持 `Alt+Shift+B` 快捷键开关面板与托盘一键开关权益借用 |
 | **凭证智能去重** | 重新扫码或重粘自动识别已有 mid 并无缝更新凭据，不产生幽灵孤立条目 |
 | **Cookie 整理** | 直接粘贴 DevTools 复制的内容，自动解析分级，安全排除无关设备字段 |
 | **液态玻璃面板** | 0.72 晶莹透光毛玻璃与 WCAG AA 双主题高对比度调色，文本框内嵌多态操作 |
@@ -145,13 +149,21 @@ src/
   meta.js              userscript 头部（改版本号只改这里）
   config.js            常量：画质档位、Cookie 策略
   index.js             入口
-  injected/hook.js     主世界钩子（独立作用域，构建时内联）
+  shared/              沙箱与主世界钩子共享纯函数（单一事实源）
+    vip.js             大会员字段补丁
+    region.js          区域形态与番剧状态补丁
+  injected/            主世界钩子（独立作用域，构建时 esbuild 打包压缩内联）
+    hook.js            主入口：XHR/Fetch 劫持、软登出拦截与消息桥
+    emulate.js         本地界面伪装与弹窗清理
+    nano.js            现代番剧播放器 (nanoPlayer / window.player) 接管
+    prefetch.js        首屏播放流预热与 SSR 数据隐藏
   core/
     accounts.js        ★ 多账号池：池形状、迁移、借用来源自动解析
+    backup.js          Web Crypto 口令加密备份导出/导入
     browser-cookie.js  ★ 浏览器 Cookie 改写（切号用，能力分层降级）
-    switcher.js        ★ 账号操作编排：切号 / 借用 / 探测统一入口
+    switcher.js        ★ 账号操作编排：切号 / 借用 / 探测 / 备份统一入口
     endpoints.js       ★ 端点表：哪些 host+method+path 允许带 B 的 Cookie
-    proxy.js           ★ 代理流水线
+    proxy.js           ★ 代理流水线（含故障切换与预热缓存归一化）
     bus.js             沙箱 ↔ 主世界 消息通道
     inject.js          钩子注入 + 配置内联
     session.js         会话：Cookie 取值、发送方式探测、wbi 密钥
@@ -162,11 +174,14 @@ src/
     wbi.js  md5.js     签名
     transport.js       GM_xmlhttpRequest 封装
     cache.js           TTL 缓存 + 在途去重
-    patch.js           响应补丁
-    region.js          区域形态
+    patch.js           响应补丁（含音轨重排与官源 CDN 优选）
+    region.js          区域形态（复用 shared/region.js）
     log.js             日志与控制台徽标
   ui/
-    panel.js           液态玻璃悬浮面板 + 快捷切号 Dock
+    panel.js           液态玻璃悬浮面板主控
+    dock.js            左下角微缩切号胶囊 + 借用快切托盘
+    dom.js             UI DOM 辅助与内联 SVG 图标
+    styles.js          液态玻璃样式表
     menu.js            油猴菜单（全部指向面板，不重复提供配置）
 test/                  Node 测试 + 浏览器夹具
 tools/                 构建、发布、验证工具

@@ -518,6 +518,81 @@ console.log('\n[10] summarize 提取流信息：支持 UGC(data) 与 PGC(result)
   check('durl kbps 计算', durlRes.kbps > 1000, durlRes.kbps);
 }
 
+console.log('\n[11] -10403 地区/版权限制不误杀正常大会员账号');
+{
+  calls.length = 0;
+  replies.clear();
+  const ctx = makeContext();
+  ctx.GM_setValue('b.accounts', {
+    v: 1,
+    activeId: 'vip-1',
+    borrowId: '',
+    accounts: [{ id: 'vip-1', cookie: B_COOKIE, mid: '999', uname: 'VIP1', vipStatus: 1, vipType: 2, invalid: false, checkedAt: Date.now() }]
+  });
+  replies.set('https://api.bilibili.com/ogv/player/playview', () => ({
+    text: JSON.stringify({ code: -10403, message: '非常抱歉，根据版权方要求您所在的地区无法观看本片' })
+  }));
+  const api = await loadProxyModule(ctx);
+  const r = await api.handleRequest({ url: 'https://api.bilibili.com/ogv/player/playview?ep_id=100&cid=200', method: 'GET' });
+  const savedPool = ctx.GM_getValue('b.accounts');
+  check('地区限制回退 passthrough', r.passthrough === true);
+  check('正常大会员账号未被误标 invalid', savedPool.accounts[0].invalid === false && savedPool.accounts[0].vipStatus === 1, savedPool.accounts[0]);
+}
+
+console.log('\n[12] 多大会员账号池自动故障切换重试');
+{
+  calls.length = 0;
+  replies.clear();
+  const ctx = makeContext();
+  const B2_COOKIE = 'SESSDATA=b2-backup-vip; bili_jct=b2-csrf; DedeUserID=888';
+  ctx.GM_setValue('b.accounts', {
+    v: 1,
+    activeId: 'plain-a',
+    borrowId: '',
+    accounts: [
+      { id: 'plain-a', cookie: 'SESSDATA=a-plain; bili_jct=a-csrf; DedeUserID=111', mid: '111', uname: 'A', vipStatus: 0, vipType: 0, invalid: false, checkedAt: Date.now() },
+      { id: 'vip-1', cookie: B_COOKIE, mid: '999', uname: 'VIP1', vipStatus: 1, vipType: 2, invalid: false, checkedAt: Date.now() },
+      { id: 'vip-2', cookie: B2_COOKIE, mid: '888', uname: 'VIP2', vipStatus: 1, vipType: 2, invalid: false, checkedAt: Date.now() }
+    ]
+  });
+  replies.set('https://api.bilibili.com/ogv/player/playview', (rec) => {
+    if (rec.cookie.includes('b-secret')) {
+      return { text: JSON.stringify({ code: -101, message: '账号未登录' }) };
+    }
+    return { text: JSON.stringify({ code: 0, data: { video_info: { quality: 120, dash: { video: [], audio: [] } } } }) };
+  });
+  const api = await loadProxyModule(ctx);
+  const r = await api.handleRequest({ url: 'https://api.bilibili.com/ogv/player/playview?ep_id=55&cid=66', method: 'GET' });
+  const savedPool = ctx.GM_getValue('b.accounts');
+  check('VIP1 失效后自动切换至 VIP2 重试成功', r.passthrough === false && JSON.parse(r.body).data.video_info.quality === 120);
+  check('VIP1 被标记 invalid', savedPool.accounts.find((a) => a.id === 'vip-1').invalid === true);
+  check('VIP2 保持正常有效', savedPool.accounts.find((a) => a.id === 'vip-2').invalid === false);
+}
+
+console.log('\n[13] 归一化 cacheKey：prefetch 与带动态参数的真实请求命中同一缓存');
+{
+  calls.length = 0;
+  replies.clear();
+  const ctx = makeContext();
+  ctx.GM_setValue('b.cookie', B_COOKIE);
+  let netHits = 0;
+  replies.set('https://api.bilibili.com/x/player/wbi/playurl', () => {
+    netHits++;
+    return { text: JSON.stringify({ code: 0, data: { quality: 120, dash: { video: [], audio: [] } } }) };
+  });
+  const api = await loadProxyModule(ctx);
+  const r1 = await api.handleRequest({
+    url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1PREFETCH&cid=777&fnver=0&fnval=4048&fourk=1',
+    method: 'GET'
+  });
+  const r2 = await api.handleRequest({
+    url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1PREFETCH&cid=777&qn=64&gaia_source=&session=abc123&w_rid=deadbeef&wts=1700000000',
+    method: 'GET'
+  });
+  check('prefetch 预热成功', r1.passthrough === false);
+  check('真实播放器请求命中 prefetch 缓存', r2.cached === true && netHits === 1, { cached: r2.cached, netHits });
+}
+
 console.log('');
 if (failed) {
   console.error(`\x1b[31m${failed} 项失败\x1b[0m`);

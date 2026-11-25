@@ -14,499 +14,43 @@ import { store } from '../core/store.js';
 import { parseCookieText, pickFields, joinCookie, sortFields, tierOf } from '../core/cookie-parse.js';
 import { TEXT } from '../core/text.js';
 import { strategyLabel, invalidateMixinKey, quickCheck, hasCookie, cookieProblem } from '../core/session.js';
-import { overview, overviewAsync, saveAccount, testAccount, reprobe, useAsBorrowSource, useAutoBorrowSource, switchLoginTo, forgetAccount, renamePoolAccount, importBrowserAccount, saveAndApplyScannedAccount } from '../core/switcher.js';
+import {
+  overview,
+  overviewAsync,
+  saveAccount,
+  testAccount,
+  reprobe,
+  reprobeAll,
+  useAsBorrowSource,
+  useAutoBorrowSource,
+  switchLoginTo,
+  forgetAccount,
+  renamePoolAccount,
+  importBrowserAccount,
+  saveAndApplyScannedAccount,
+  exportEncryptedBackup,
+  importEncryptedBackup
+} from '../core/switcher.js';
 import { fetchQrCode, pollQrCode } from '../core/qr-login.js';
 import { REGION_MODES } from '../core/region.js';
 import { stats, qualityName, codecName, exportLog, setDebug, isDebug } from '../core/log.js';
 import { resetCache, cacheStats } from '../core/proxy.js';
-import { pushConfig, getToken, isHookAlive, getHookSelfCheck, pingHook } from '../core/bus.js';
+import { pushConfig, isHookAlive, getHookSelfCheck, pingHook } from '../core/bus.js';
 import { liveConfig } from '../core/inject.js';
+import { ensureStyle } from './styles.js';
+import { el, section, segmented, row, details, mkBtn, TAG_KIND } from './dom.js';
+import { createDockRenderer } from './dock.js';
 
 const ID = NS + '-panel';
 const TITLE = NAME;
 let root = null;
-let bodyEl = null;
 let open = false;
 let tickTimer = null;
 /**
  * 账号池的重绘函数。
- *
- * 单独提到模块级，是因为账号数据可能在面板打开期间被改掉：
- * 面板外导入账号、菜单里切号、甚至用户自己登了另一个号。
- * 只在构建时渲染一次的话，展开看到的一直是旧数据。
+ * 面板打开期间账号数据可能被外部修改，展开时需按最新状态重绘。
  */
 let rerenderPool = null;
-
-/* ---------------- 液态玻璃样式 ---------------- */
-const CSS = `
-#${ID}, #${ID} * { box-sizing: border-box; }
-#${ID} {
-  position: fixed; left: 12px; bottom: 12px; z-index: 2147483647;
-  font: 13px/1.6 "PingFang SC","Microsoft YaHei",-apple-system,sans-serif;
-  color: var(--fg);
-  -webkit-font-smoothing: antialiased;
-  /* 统一度量变量：面板与内部控件的宽度计算共用，避免各处 padding 写死 */
-  --pad-x: 14px;
-  --mono: Consolas, Monaco, "SF Mono", monospace;
-}
-#${ID} *, #${ID} *::before, #${ID} *::after { box-sizing: border-box; }
-#${ID} .glass {
-  background: var(--bg);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
-  backdrop-filter: blur(22px) saturate(180%);
-  border: 1px solid var(--bd);
-  box-shadow: 0 10px 34px var(--sh), inset 0 1px 0 var(--hl);
-  border-radius: 18px;
-}
-#${ID} .dot {
-  width: 34px; height: 34px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; user-select: none; position: relative;
-  transition: transform .18s cubic-bezier(.2,.8,.2,1);
-}
-#${ID} .dot:active { transform: scale(.92); }
-#${ID} .dot::after {
-  content: ''; position: absolute; inset: -3px; border-radius: 50%;
-  border: 1.5px solid var(--ring); opacity: 0; transition: opacity .2s;
-}
-#${ID} .dot.on::after { opacity: 1; animation: ${ID}-pulse 2.4s ease-out infinite; }
-@keyframes ${ID}-pulse {
-  0% { transform: scale(1); opacity: .8; }
-  70% { transform: scale(1.55); opacity: 0; }
-  100% { transform: scale(1.55); opacity: 0; }
-}
-#${ID} .face { width: 15px; height: 15px; border-radius: 50%; background: var(--dotc); transition: background .25s; }
-#${ID} .badge {
-  position: absolute; top: -5px; right: -5px; min-width: 15px; height: 15px;
-  padding: 0 4px; border-radius: 8px; background: #fb7299; color: #fff;
-  font-size: 10px; line-height: 15px; text-align: center; font-weight: 600;
-  box-shadow: 0 0 0 2px var(--bg);
-}
-#${ID} .dock-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
-#${ID} .dock-tray {
-  position: absolute;
-  bottom: 42px;
-  left: 0;
-  min-width: 160px;
-  max-width: 240px;
-  padding: 8px 10px;
-  border-radius: 14px;
-  opacity: 0;
-  transform: translateY(6px) scale(.96);
-  pointer-events: none;
-  transition: opacity .18s cubic-bezier(.2,.8,.2,1), transform .18s cubic-bezier(.2,.8,.2,1);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  z-index: 10;
-  box-shadow: 0 10px 30px var(--sh), inset 0 1px 0 var(--hl);
-}
-#${ID} .dock-wrap:hover .dock-tray,
-#${ID} .dock-wrap:focus-within .dock-tray {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: auto;
-}
-#${ID} .panel.show ~ .dock-wrap .dock-tray {
-  display: none !important;
-}
-#${ID} .dock-tray-head {
-  font-size: 11px;
-  font-weight: 600;
-  opacity: .55;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--sep);
-}
-#${ID} .dock-tray-empty {
-  font-size: 11.5px;
-  opacity: .45;
-  padding: 4px 2px;
-}
-#${ID} .dock-tray-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  max-height: 200px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-#${ID} .dock-tray-item {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 4px 6px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background .14s;
-  font-size: 12px;
-}
-#${ID} .dock-tray-item:hover,
-#${ID} .dock-tray-item:focus-visible {
-  background: var(--hov);
-  outline: none;
-}
-#${ID} .dock-tray-item.active {
-  background: var(--hov2);
-}
-#${ID} .dock-tray-item.disabled {
-  opacity: .5;
-  cursor: not-allowed;
-}
-#${ID} .dock-tray-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-#${ID} .dot-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-#${ID} .dot.has-avatar .face {
-  position: absolute;
-  right: 1px;
-  bottom: 1px;
-  width: 9px;
-  height: 9px;
-  border: 1.5px solid var(--bg);
-}
-#${ID} .dot.has-avatar .dot-vip-badge {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #ffd700, #ff8c00);
-  border: 1.5px solid var(--bg);
-  box-shadow: 0 0 4px rgba(255, 215, 0, .6);
-}
-#${ID} .panel {
-  width: 324px; max-height: min(78vh, 620px); margin-bottom: 10px;
-  overflow: hidden auto; display: none;
-  scrollbar-width: thin; scrollbar-color: var(--sb) transparent;
-  overscroll-behavior: contain;
-}
-/* 玻璃面板上默认滚动条太重，这里自定义：细、无轨道、悬停才显形 */
-#${ID} .panel::-webkit-scrollbar { width: 8px; }
-#${ID} .panel::-webkit-scrollbar-track { background: transparent; }
-#${ID} .panel::-webkit-scrollbar-thumb {
-  background: var(--sb); border-radius: 99px;
-  border: 2px solid transparent; background-clip: content-box;
-}
-#${ID} .panel::-webkit-scrollbar-thumb:hover { background: var(--sb2); background-clip: content-box; }
-#${ID} .panel.show { display: block; animation: ${ID}-in .28s cubic-bezier(.16, 1, .3, 1); }
-@keyframes ${ID}-in { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
-#${ID} .head {
-  display: flex; align-items: center; gap: 8px; padding: 12px var(--pad-x) 10px;
-  position: sticky; top: 0; z-index: 2;
-  background: var(--bg-head);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--sep);
-  box-shadow: 0 4px 18px -4px var(--sh), inset 0 1px 0 var(--hl);
-}
-#${ID} .title {
-  font-size: 13.5px; font-weight: 650; flex: 1; letter-spacing: .2px;
-  display: flex; align-items: center; gap: 7px;
-}
-#${ID} .title::before {
-  content: ''; width: 8px; height: 8px; border-radius: 50%;
-  background: linear-gradient(135deg, #fb7299, #00a396);
-  box-shadow: 0 0 8px var(--ring);
-  display: inline-block; flex-shrink: 0;
-}
-#${ID} .ver {
-  font-size: 10px; font-weight: 600; font-family: var(--mono);
-  padding: 1.5px 8px; border-radius: 99px;
-  background: var(--hov2); border: 1px solid var(--ring-soft);
-  color: var(--fg); opacity: .85; line-height: 1.4;
-  box-shadow: inset 0 1px 0 var(--hl);
-}
-#${ID} .x {
-  cursor: pointer; opacity: .6; font-size: 13px; line-height: 1;
-  width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 50%; border: 1px solid transparent;
-  transition: opacity .18s, background .18s, transform .22s cubic-bezier(.16,1,.3,1), border-color .18s;
-}
-#${ID} .x:hover {
-  opacity: 1; background: var(--hov); border-color: var(--sep); transform: rotate(90deg);
-}
-#${ID} .sec { padding: 10px var(--pad-x); border-top: 1px solid var(--sep); }
-/* 中文不需要字距/大写；数字类标签靠 opacity 拉开层次即可 */
-#${ID} .lbl { font-size: 10.5px; opacity: .45; margin-bottom: 7px; font-weight: 600; }
-#${ID} .row { display: flex; align-items: center; gap: 8px; min-height: 28px; }
-#${ID} .row + .row { margin-top: 4px; }
-#${ID} .row > span:first-child { flex: 0 0 74px; font-size: 12px; opacity: .72; }
-#${ID} .seg {
-  display: flex; gap: 2px; padding: 3px; border-radius: 11px;
-  background: var(--hov); border: 1px solid var(--sep); flex: 1;
-}
-#${ID} .seg button {
-  flex: 1; border: 0; background: transparent; color: var(--fg); cursor: pointer;
-  font-size: 11.5px; padding: 5px 2px; border-radius: 8px; opacity: .58;
-  transition: opacity .16s, background .2s, box-shadow .2s, transform .1s;
-  white-space: nowrap; -webkit-tap-highlight-color: transparent;
-}
-#${ID} .seg button:hover { opacity: .92; }
-#${ID} .seg button:active { transform: scale(.96); }
-#${ID} .seg button.on {
-  background: var(--seg-on); opacity: 1; font-weight: 600;
-  box-shadow: 0 1px 4px var(--sh), inset 0 1px 0 var(--hl);
-}
-#${ID} .txt {
-  /* 必须显式 width:100% —— 这些文本域直接挂在 .sec 下，不是 flex 子项，
-     只写 flex:1 会退化成内容宽度（实测面板内区 284px 却只占 164px）。 */
-  display: block; width: 100%; box-sizing: border-box;
-  padding: 9px 11px; border-radius: 10px; border: 1px solid var(--sep);
-  background: var(--hov); color: var(--fg); font-size: 12px; line-height: 1.65;
-  font-family: var(--mono); resize: vertical; min-height: 74px; outline: none;
-  transition: border-color .18s, box-shadow .18s, background .18s;
-}
-#${ID} .txt::placeholder { color: var(--fg); opacity: .28; }
-#${ID} .txt:hover { border-color: var(--bd2); }
-#${ID} .txt:focus {
-  border-color: var(--ring); background: var(--hov2);
-  box-shadow: 0 0 0 3px var(--ring-soft);
-}
-#${ID} .txt::-webkit-scrollbar { width: 6px; }
-#${ID} .txt::-webkit-scrollbar-track { background: transparent; }
-#${ID} .txt::-webkit-scrollbar-thumb { background: var(--sb); border-radius: 99px; }
-#${ID} .ta-wrap { position: relative; width: 100%; box-sizing: border-box; }
-#${ID} .ta-wrap .txt { padding-right: 28px; }
-#${ID} .ta-action {
-  position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 6px;
-  border: 1px solid transparent; background: transparent; color: var(--fg); opacity: .72;
-  font-size: 11px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: opacity .16s, background .16s, border-color .16s; padding: 0;
-}
-#${ID} .ta-action:hover { opacity: .95; background: var(--hov2); border-color: var(--sep); }
-#${ID} .msg { font-size: 11.5px; margin-top: 6px; white-space: pre-line; line-height: 1.5; }
-#${ID} .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-#${ID} button.act {
-  border: 1px solid var(--sep); background: var(--hov); color: var(--fg);
-  border-radius: 9px; padding: 5px 11px; font-size: 11.5px; cursor: pointer;
-  transition: background .16s, transform .1s, border-color .16s, box-shadow .16s;
-  white-space: nowrap; -webkit-tap-highlight-color: transparent;
-}
-#${ID} button.act:hover { background: var(--hov2); border-color: var(--bd2); }
-#${ID} button.act:active { transform: scale(.97); }
-#${ID} button.act:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-soft); }
-#${ID} button.act:disabled { opacity: .45; cursor: default; transform: none; }
-/*
- * 主按钮。
- *
- * 两个坑，都踩过：
- *  1. 顶部那道白条来自 inset 0 1px 0 var(--hl) —— --hl 是给玻璃面板用的
- *     顶部高光，浅色主题下是 rgba(255,255,255,.75)，放在按钮上就是一条白边。
- *     按钮自己用 --btn-hl，强度低一个量级。
- *  2. 文字写死 #fff 在浅色主题下几乎看不见：--pri 只有 18% 不透明度，
- *     白字对比度约 1.5:1。所以前景色随主题走：浅色用深青，深色用浅青。
- */
-#${ID} button.act.pri {
-  background: var(--pri); border-color: transparent;
-  color: var(--pri-fg); font-weight: 600;
-  box-shadow: inset 0 1px 0 var(--btn-hl), 0 1px 3px var(--sh);
-}
-#${ID} button.act.pri:hover { background: var(--pri-hover); }
-#${ID} button.act.pri:active { filter: none; }
-#${ID} .dot:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-soft); }
-#${ID} .live { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; align-items: baseline; }
-#${ID} .live .k { font-size: 11.5px; opacity: .6; }
-#${ID} .live .v { font-size: 12.5px; font-variant-numeric: tabular-nums; }
-#${ID} .live .v.big { font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
-/*
- * 诊断区：原来是 2 列网格 ×4 行 = 8 格，占掉将近一屏高度。
- * 数字之间没有先后关系，压成一行即可，窄屏自然换行。
- */
-#${ID} .stats { display: flex; flex-wrap: wrap; gap: 3px 12px; align-items: baseline; }
-#${ID} .stats .s { display: inline-flex; gap: 4px; align-items: baseline; }
-#${ID} .stats .s .k { font-size: 10.5px; opacity: .55; }
-#${ID} .stats .s .v { font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 600; }
-
-/*
- * 标签。
- *
- * 之前「大会员」用浅底彩字、「登录中 / 借用中」用实底色 —— 两套风格混排。
- * 而且实底色上的文字继承 --fg：深色主题下变成白字压在饱和青/粉上，
- * 对比度只有约 3:1，看得清但不舒服。
- * 统一成浅底 + 同色系深字，两套主题都能保证可读。
- */
-#${ID} .tag {
-  font-size: 9.5px; line-height: 1.5; padding: 1px 6px; border-radius: 99px;
-  flex-shrink: 0; white-space: nowrap;
-}
-#${ID} .tag.on    { background: var(--tag-on-bg);    color: var(--tag-on-fg); }
-#${ID} .tag.borrow { background: var(--tag-borrow-bg); color: var(--tag-borrow-fg); }
-#${ID} .tag.vip    { background: var(--tag-vip-bg);    color: var(--tag-vip-fg); }
-  #${ID} .tag.plain  { background: var(--tag-plain-bg);  color: var(--tag-plain-fg); }
-  #${ID} .tag.warn   { background: var(--tag-warn-bg);   color: var(--tag-warn-fg); }
-  #${ID} .tag.muted  { background: transparent; color: var(--tag-muted-fg); }
-#${ID} .avatar {
-  width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
-  flex-shrink: 0; border: 1px solid var(--sep); background: var(--hov2);
-}
-#${ID} .avatar-initial {
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 600; opacity: .8;
-}
-#${ID} .hero {
-  display: flex; align-items: baseline; gap: 9px; margin-bottom: 8px;
-  padding: 8px 12px; border-radius: 12px;
-  background: var(--hov); border: 1px solid var(--sep);
-}
-#${ID} .hero .q { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
-#${ID} .hero .sub {
-  font-size: 11.5px; opacity: .72; padding: 2px 7px;
-  border-radius: 99px; background: var(--hov2); border: 1px solid var(--sep);
-}
-#${ID} .hint { font-size: 10.5px; opacity: .42; line-height: 1.5; margin-top: 6px; }
-#${ID} pre.help {
-  white-space: pre-wrap; word-break: break-word; margin: 6px 0 0;
-  font: 10.5px/1.65 var(--mono); opacity: .78;
-  background: var(--hov); border-radius: 10px; padding: 9px 11px;
-  /* 中文在等宽字体里是双宽，视觉行数约为字符数的一半 —— 排版时别按字符数估。
-     420px 是量出来的：区域那节的代理分流规则刚好放得下，不必出现「像被截断」的观感。 */
-  max-height: 420px; overflow: auto;
-  scrollbar-width: thin; scrollbar-color: var(--sb) transparent;
-}
-#${ID} pre.help::-webkit-scrollbar { width: 6px; height: 6px; }
-#${ID} pre.help::-webkit-scrollbar-track { background: transparent; }
-#${ID} pre.help::-webkit-scrollbar-thumb { background: var(--sb); border-radius: 99px; }
-#${ID} details { margin-top: 6px; }
-#${ID} summary {
-  cursor: pointer; font-size: 11.5px; opacity: .6; list-style: none;
-  transition: opacity .16s; padding: 2px 0;
-}
-#${ID} summary:hover { opacity: .95; }
-#${ID} summary::-webkit-details-marker { display: none; }
-#${ID} summary::before { content: '▸ '; display: inline-block; transition: transform .18s; }
-#${ID} details[open] summary::before { content: '▾ '; }
-
-@media (prefers-color-scheme: dark) {
-  #${ID} {
-    --fg: rgba(255,255,255,.92); --bg: rgba(28,28,32,.6); --bd: rgba(255,255,255,.13);
-    --hl: rgba(255,255,255,.1); --sh: rgba(0,0,0,.5); --ring: rgba(120,220,200,.6);
-    --ring-soft: rgba(120,220,200,.16); --sb: rgba(255,255,255,.16); --sb2: rgba(255,255,255,.28);
-    --dotc: #6fd3bd; --hov: rgba(255,255,255,.07); --hov2: rgba(255,255,255,.13);
-    --seg-on: rgba(255,255,255,.15); --sep: rgba(255,255,255,.085); --bd2: rgba(255,255,255,.22);
-    --pri: rgba(120,220,200,.24); --pri-hover: rgba(120,220,200,.34); --pri-fg: #d6fbf2;
-    --bg-head: rgba(30,30,34,.72);
-    --btn-hl: rgba(255,255,255,.14);
-    --tag-on-bg: rgba(120,220,200,.16); --tag-on-fg: #7fe3cd;
-    --tag-borrow-bg: rgba(230,162,60,.20); --tag-borrow-fg: #ffc966;
-    --tag-vip-bg: rgba(251,114,153,.20); --tag-vip-fg: #ffa3be;
-    --tag-plain-bg: rgba(255,255,255,.09); --tag-plain-fg: rgba(255,255,255,.7);
-    --tag-warn-bg: rgba(245,108,108,.20); --tag-warn-fg: #ff8585;
-    --tag-muted-fg: rgba(255,255,255,.55);
-  }
-}
-@media (prefers-color-scheme: light) {
-  #${ID} {
-    --fg: rgba(20,22,26,.9); --bg: rgba(255,255,255,.56); --bd: rgba(20,22,26,.1);
-    --hl: rgba(255,255,255,.75); --sh: rgba(20,22,26,.14); --ring: rgba(0,160,150,.55);
-    --ring-soft: rgba(0,150,136,.14); --sb: rgba(20,22,26,.16); --sb2: rgba(20,22,26,.28);
-    --dotc: #00a396; --hov: rgba(20,22,26,.045); --hov2: rgba(20,22,26,.09);
-    --seg-on: rgba(255,255,255,.95); --sep: rgba(20,22,26,.075); --bd2: rgba(20,22,26,.16);
-    --pri: rgba(0,150,136,.15); --pri-hover: rgba(0,150,136,.24);
-    --bg-head: rgba(252,252,253,.72);
-    /*
-     * 前景色是算出来的，不是挑出来的（npm run check:contrast）：
-     *   #ffffff   → 1.27:1（几乎不可见，就是「按钮发白看不清」的由来）
-     *   #00796b   → 4.35:1（差一点点）
-     *   #007065   → 4.90:1 ← 取这个，再深就偏暗绿、失去「强调色」的意思
-     */
-    --pri-fg: #007065;
-    --btn-hl: rgba(255,255,255,.5);
-    --tag-on-bg: rgba(0,150,136,.13); --tag-on-fg: #007065;
-    --tag-borrow-bg: rgba(230,162,60,.14); --tag-borrow-fg: #8c5200;
-    --tag-vip-bg: rgba(251,114,153,.14); --tag-vip-fg: #b82153;
-    --tag-plain-bg: rgba(20,22,26,.06); --tag-plain-fg: rgba(20,22,26,.6);
-    --tag-warn-bg: rgba(245,108,108,.15); --tag-warn-fg: #d32f2f;
-    --tag-muted-fg: rgba(20,22,26,.62);
-  }
-}
-`;
-
-function ensureStyle() {
-  if (document.getElementById(ID + '-css')) return;
-  const st = document.createElement('style');
-  st.id = ID + '-css';
-  st.textContent = CSS;
-  (document.head || document.documentElement).appendChild(st);
-}
-
-/* ---------------- 构建 ---------------- */
-
-function el(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
-}
-
-/** cookie-parse 的分级 → 面板标签配色 */
-const TAG_KIND = {
-  required: 'vip',
-  ogv: 'borrow',
-  identity: 'on',
-  auto: 'muted',
-  optional: 'plain'
-};
-
-function section(title) {
-  const s = el('div', 'sec');
-  if (title) s.appendChild(el('div', 'lbl', title));
-  return s;
-}
-
-/**
- * 分段选择器。
- *
- * `cur` 必须跟着点击一起变。曾经直接拿构建时传入的 `current` 做判断，
- * 于是「一开始选中的那一项」在用户点到别处之后就再也点不回来了 ——
- * 界面上看着能点，实际什么都不发生，只能刷新页面。
- * 典型症状：界面伪装默认开，关掉之后开不回来；画质选过 4K 就回不到「最高」。
- */
-function segmented(options, current, onPick) {
-  const seg = el('div', 'seg');
-  let cur = current;
-  for (const o of options) {
-    const b = el('button', o.value === cur ? 'on' : '', o.label);
-    b.title = o.title || o.label;
-    b.addEventListener('click', () => {
-      if (o.value === cur) return;
-      onPick(o.value);
-      cur = o.value;
-      for (const x of seg.children) x.className = '';
-      b.className = 'on';
-    });
-    seg.appendChild(b);
-  }
-  return seg;
-}
-
-function row(label, control) {
-  const r = el('div', 'row');
-  r.appendChild(el('span', '', label));
-  r.appendChild(control);
-  return r;
-}
-
-/** 折叠说明：主界面只留标题，长文案点开才看 */
-function details(summary, text) {
-  const d = el('details');
-  d.appendChild(el('summary', '', summary));
-  d.appendChild(el('pre', 'help', text));
-  return d;
-}
 
 function state() {
   if (!store.isEnabled()) return { ok: false, dot: '#9aa0a6', note: TEXT.badge.off };
@@ -519,28 +63,24 @@ function state() {
   return { ok: true, dot: '', note: '' };
 }
 
-/**
- * 任何会改变「下一次 playurl 请求长什么样」的操作都必须走这里：
- *   resetCache() + invalidateMixinKey() + pushConfig()
- *
- * 为什么菜单也要用：菜单改的是同一份设置（画质 / 区域 / 开关 / 重探），
- * 但曾经只调 store.setX + refreshPanel() 收尾。后果分两种：
- *   · 画质：URL 稳定的端点（/x/player/playurl 等）缓存仍命中，
- *     于是「切了档位但画质没变」能持续一个 TTL（120 秒）。
- *   · 重探：markProbed 可能把 resolveBorrow() 指向**另一个账号**，
- *     而缓存里还是上一个账号的播放地址，同样要一个 TTL 才自愈。
- */
 function afterChange() {
   resetCache();
   invalidateMixinKey();
-  pushConfig(liveConfig(getToken()));
+  pushConfig(liveConfig());
   renderLive();
 }
+
 /** 供菜单命令复用：改完设置后必须走同一套失效，不能只刷界面。 */
 export function invalidateAfterSettingsChange() {
   afterChange();
   refreshPanel();
 }
+
+const dock = createDockRenderer({
+  getRoot: () => root,
+  getState: state,
+  onToggleBorrow: () => invalidateAfterSettingsChange()
+});
 
 /* ---------------- 面板内容 ---------------- */
 
@@ -622,6 +162,16 @@ function buildPanel(body) {
     segmented([{ value: true, label: TEXT.switches.on }, { value: false, label: TEXT.switches.off }], v, set);
   misc.appendChild(row(TEXT.switches.ui, onOffSeg(store.isPatchUi(), (v) => { store.setPatchUi(v); afterChange(); })));
   misc.appendChild(row(TEXT.switches.prefetch, onOffSeg(store.isPrefetch(), (v) => { store.setPrefetch(v); afterChange(); })));
+  misc.appendChild(
+    row(
+      TEXT.switches.preferCdn,
+      onOffSeg(store.isPreferCdn(), (v) => {
+        store.setPreferCdn(v);
+        afterChange();
+      }),
+      TEXT.switches.preferCdnTip
+    )
+  );
   misc.appendChild(row(TEXT.switches.softLogout, onOffSeg(store.isSoftLogout(), (v) => { store.setSoftLogout(v); afterChange(); })));
   misc.appendChild(row(TEXT.switches.debug, onOffSeg(isDebug(), (v) => { store.setDebug(v); setDebug(v); })));
   body.appendChild(misc);
@@ -702,7 +252,27 @@ function buildPanel(body) {
   };
 
   /* --- 账号池 --- */
-  const poolSec = section(TEXT.pool.title);
+  const poolSec = section();
+  const poolHead = el('div', 'lbl-row');
+  poolHead.appendChild(el('div', 'lbl', TEXT.pool.title));
+  const recheckAllBtn = mkBtn(
+    TEXT.pool.actions.recheckAll,
+    async () => {
+      recheckAllBtn.disabled = true;
+      say(TEXT.pool.states.recheckingAll, 'var(--fg)');
+      const res = await reprobeAll(({ index, total }) => {
+        say(`${TEXT.pool.states.recheckingAll} (${index}/${total})`, 'var(--fg)');
+      });
+      recheckAllBtn.disabled = false;
+      renderPool();
+      dock.renderDot();
+      say(`${TEXT.pool.states.recheckAllDone}${res.okCount}/${res.total}`, res.failCount ? '#e6a23c' : '#00a396');
+    },
+    { title: TEXT.pool.states.recheckAllTip }
+  );
+  recheckAllBtn.style.cssText = 'padding:2px 8px;font-size:10.5px;display:none';
+  poolHead.appendChild(recheckAllBtn);
+  poolSec.appendChild(poolHead);
   const poolList = el('div');
   poolList.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-bottom:8px';
   poolSec.appendChild(poolList);
@@ -719,6 +289,7 @@ function buildPanel(body) {
   /* ---- 账号池渲染 ---- */
   function renderPool() {
     const o = overview();
+    recheckAllBtn.style.display = o.rows.length > 1 ? '' : 'none';
     poolList.textContent = '';
     poolMismatchNodes = [];
     currentTagNode = null;
@@ -1289,6 +860,58 @@ function buildPanel(body) {
     qc.ok ? (qc.warn ? '#e6a23c' : 'var(--fg)') : '#e6a23c'
   );
 
+  /* --- 加密备份与迁移 --- */
+  const bak = section(TEXT.backup.title);
+  const bakBtns = el('div', 'btns');
+  bakBtns.append(
+    mkBtn(TEXT.backup.exportBtn, async () => {
+      if (!overview().rows.length) {
+        say('⚠ ' + TEXT.backup.emptyPool, '#e6a23c');
+        return;
+      }
+      const pwd = prompt(TEXT.backup.pwdPromptExport);
+      if (pwd === null) return;
+      try {
+        const res = await exportEncryptedBackup(pwd);
+        let copied = false;
+        try {
+          await navigator.clipboard.writeText(res.text);
+          copied = true;
+        } catch {}
+        try {
+          const blob = new Blob([res.text], { type: 'application/json;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `bili-toolkit-backup-${new Date().toISOString().slice(0, 10)}.json`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch {}
+        say('✅ ' + (copied ? TEXT.backup.exportedOk : TEXT.backup.exportedDownloaded), '#00a396');
+      } catch (e) {
+        say('❌ ' + TEXT.backup.failed + ((e && e.message) || e), '#f56c6c');
+      }
+    }),
+    mkBtn(TEXT.backup.importBtn, async () => {
+      const raw = prompt(TEXT.backup.importPasteAsk);
+      if (!raw || !raw.trim()) return;
+      const pwd = prompt(TEXT.backup.pwdPromptImport);
+      if (pwd === null) return;
+      const applySettings = confirm(TEXT.backup.importApplySettings);
+      try {
+        const res = await importEncryptedBackup(raw, pwd, { applySettings });
+        renderPool();
+        dock.renderDot();
+        renderLive();
+        say(`✅ ${TEXT.backup.importedOk}+${res.added} / ↻${res.updated}`, '#00a396');
+      } catch (e) {
+        say('❌ ' + TEXT.backup.failed + ((e && e.message) || e), '#f56c6c');
+      }
+    })
+  );
+  bak.appendChild(bakBtns);
+  body.appendChild(bak);
+
   /* --- 诊断 --- */
   const diag = section(TEXT.diag.title);
   const dbox = el('div', 'stats');
@@ -1304,9 +927,6 @@ function buildPanel(body) {
     mkBtn(TEXT.diag.actions.reprobe, async () => {
       say(TEXT.diag.retrying, 'var(--fg)');
       store.setStrategy(-1);
-      // 重探借用源：会员状态与发送方式一起刷新，改的正是池内那一条。
-      // 与菜单里的「重探」同理：结果可能让 resolveBorrow 指向另一个账号，
-      // 必须失效缓存 + 重推配置，否则旧账号的播放地址还会被供一个 TTL。
       const r = await reprobe();
       invalidateAfterSettingsChange();
       renderPool();
@@ -1323,13 +943,6 @@ function buildPanel(body) {
 
   renderDiag();
   return { renderLive, renderDiag, say };
-}
-
-function mkBtn(text, fn, attrs) {
-  const b = el('button', 'act', text);
-  if (attrs) for (const [k, v] of Object.entries(attrs)) b[k] = v;
-  b.addEventListener('click', fn);
-  return b;
 }
 
 /* ---------------- 实时刷新 ---------------- */
@@ -1379,23 +992,15 @@ function renderDiag() {
   put(TEXT.diag.cacheHit, stats.cacheServed);
   put(TEXT.diag.coalesced, c.coalesced);
 
-  // 自检。刻意只占一行 —— 诊断区之前从 4 行压到 1 行就是嫌它占地方，
-  // 但「钩子活着」和「拦截接管了请求」必须分开报，否则「画质没上去」时无从查起。
   pingHook();
   const sc = getHookSelfCheck();
-  // 判据用**沙箱实际供上的响应数**，不是钩子的 intercepted：
-  //   · intercepted 只在 callSandbox 里自增，而预热走 post({type:'prefetch'})，不计数；
-  //   · 面板 1 秒轮询，视频页刚打开时首个 playurl 还没发出，读到的必然是 0；
-  //   · 于是「偶尔显示尚未接管」全是误报 —— 显示 0 只说明「到此刻没请求走到白名单」。
-  // 沙箱侧 proxyOk + cacheServed 才是「真的借到过 B 的数据」，对得上用户看到的画质。
   const hits = stats.proxyOk + stats.cacheServed;
   const s2 = el('span', 's');
   s2.appendChild(el('span', 'k', TEXT.diag.selfCheck));
   let txt = TEXT.diag.selfDead;
-  let warn = true; // 没注入钩子 = 确定坏了
+  let warn = true;
   if (sc) {
-    warn = !sc.playinfoHooked; // 只在「访问器没装上」时报警
-    // 借用总开关关闭或无可用账号时，不要求代理命中，先判借用是否激活再判命中数。
+    warn = !sc.playinfoHooked;
     const borrowActive = sc.canBorrow !== undefined ? sc.canBorrow : sc.hidePlayinfo;
     txt = !sc.playinfoHooked
       ? TEXT.diag.selfNoPlayinfo
@@ -1406,7 +1011,6 @@ function renderDiag() {
           : (sc.playinfoHidden ? TEXT.diag.selfOk : TEXT.diag.selfPlayinfoOff).replace('{n}', hits);
   }
   const v2 = el('span', 'v', txt);
-  // 「已连接但还没接管到请求」是非视频页的正常状态，不标黄 —— 误报比漏报更让人不信面板
   if (warn) v2.style.color = '#e6a23c';
   s2.appendChild(v2);
   s2.title = sc ? TEXT.diag.selfCheckTip + TEXT.diag.selfHookForward.replace('{n}', sc.intercepted) : TEXT.diag.selfCheckTip;
@@ -1420,7 +1024,6 @@ function toggle(force) {
   const p = root.querySelector('.panel');
   p.classList.toggle('show', open);
   if (open) {
-    // 池子数据可能已被面板外的操作改过（菜单切号、剪贴板导入、别处改了登录态）
     if (rerenderPool) rerenderPool();
     renderLive();
     renderDiag();
@@ -1429,135 +1032,18 @@ function toggle(force) {
     clearInterval(tickTimer);
     tickTimer = null;
   }
-  renderDot();
+  dock.renderDot();
 }
 
-let lastTrayFingerprint = '';
-
-function renderDockTray() {
-  const tray = root.querySelector('.dock-tray');
-  if (!tray) return;
-  const o = overview();
-  const rows = o.rows || [];
-  const fp = rows.map((r) => `${r.id}:${r.isActive}:${r.uname}:${r.vip}:${r.face}`).join('|') + '|canWrite:' + o.canWrite;
-  if (fp === lastTrayFingerprint && tray.children.length > 0) return;
-  lastTrayFingerprint = fp;
-
-  const focusedId = tray.contains(document.activeElement) ? document.activeElement.dataset?.id : null;
-  tray.innerHTML = '';
-
-  const head = el('div', 'dock-tray-head', TEXT.dock.quickSwitch);
-  tray.appendChild(head);
-
-  if (!rows.length) {
-    tray.appendChild(el('div', 'dock-tray-empty', TEXT.dock.noOther));
-    return;
-  }
-
-  const list = el('div', 'dock-tray-list');
-  for (const r of rows) {
-    const item = el('div', 'dock-tray-item' + (r.isActive ? ' active' : '') + (!o.canWrite ? ' disabled' : ''));
-    item.dataset.id = r.id;
-    item.tabIndex = 0;
-    item.setAttribute('role', 'button');
-
-    if (r.face) {
-      const img = el('img', 'avatar');
-      img.src = r.face;
-      item.appendChild(img);
-    } else {
-      const init = el('span', 'avatar avatar-initial', (r.uname || r.mid || '?')[0]);
-      item.appendChild(init);
-    }
-
-    const name = el('span', 'dock-tray-name', r.uname || r.mid || r.id.slice(0, 8));
-    item.appendChild(name);
-
-    if (r.invalid) {
-      item.appendChild(el('span', 'tag warn', TEXT.pool.labels.invalid));
-    } else if (r.vip) {
-      item.appendChild(el('span', 'tag vip', TEXT.dock.vipBadge));
-    }
-    if (r.isActive) {
-      item.appendChild(el('span', 'tag on', TEXT.dock.currentBadge));
-    }
-
-    item.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (r.isActive) return;
-      if (!o.canWrite) {
-        alert(TEXT.notify.switchUnsupportedLong);
-        return;
-      }
-      if (o.browserMid && !confirm(TEXT.pool.confirms.switch)) return;
-      switchLoginTo(r.id).then((sw) => {
-        if (sw.ok && sw.needReload) location.reload();
-        else if (!sw.ok) alert(sw.reason || TEXT.notify.switchFail);
-      });
-    });
-    item.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        item.click();
-      }
-    });
-
-    list.appendChild(item);
-  }
-  tray.appendChild(list);
-
-  if (focusedId) {
-    const nextFocus = tray.querySelector(`[data-id="${focusedId}"]`);
-    if (nextFocus) nextFocus.focus();
-  }
-}
-
-function renderDot() {
-  const dot = root.querySelector('.dot');
-  if (!dot) return;
-  const face = root.querySelector('.face');
-  const s = state();
-  if (face) face.style.background = s.ok ? '' : s.dot;
-  dot.classList.toggle('on', s.ok);
-  let badge = root.querySelector('.badge');
-  if (!s.ok && s.note) {
-    if (!badge) { badge = el('div', 'badge'); dot.appendChild(badge); }
-    badge.textContent = '!';
-    badge.title = s.note;
-  } else if (badge) badge.remove();
-
-  const o = overview();
-  const cur = o.rows.find((r) => r.isActive);
-  let avatarImg = dot.querySelector('.dot-avatar');
-  let vipBadge = dot.querySelector('.dot-vip-badge');
-
-  if (cur && cur.face) {
-    dot.classList.add('has-avatar');
-    if (!avatarImg) {
-      avatarImg = el('img', 'dot-avatar');
-      dot.insertBefore(avatarImg, dot.firstChild);
-    }
-    if (avatarImg.src !== cur.face) avatarImg.src = cur.face;
-    if (cur.vip) {
-      if (!vipBadge) {
-        vipBadge = el('span', 'dot-vip-badge');
-        vipBadge.title = TEXT.dock.vipBadge;
-        dot.appendChild(vipBadge);
-      }
-    } else if (vipBadge) vipBadge.remove();
-  } else {
-    dot.classList.remove('has-avatar');
-    if (avatarImg) avatarImg.remove();
-    if (vipBadge) vipBadge.remove();
-  }
-
-  dot.title = (s.ok ? TEXT.badge.running : s.note || '') + '\n' + (cur ? (cur.uname || cur.mid || '') + ' · ' : '') + (TEXT.dock.hoverTip || '');
-  renderDockTray();
+function isEditableTarget(elNode) {
+  if (!elNode) return false;
+  const tag = (elNode.tagName || '').toUpperCase();
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!elNode.isContentEditable;
 }
 
 export function mountPanel() {
-  if (root && root.isConnected) { renderDot(); return; }
-  ensureStyle();
+  if (root && root.isConnected) { dock.renderDot(); return; }
+  ensureStyle(ID);
   root = document.createElement('div');
   root.id = ID;
   root.innerHTML = `
@@ -1586,17 +1072,24 @@ export function mountPanel() {
   });
   const wrap = root.querySelector('.dock-wrap');
   if (wrap) {
-    wrap.addEventListener('mouseenter', () => renderDockTray());
+    wrap.addEventListener('mouseenter', () => dock.renderDockTray());
   }
   void api;
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && open) toggle(false);
+    if (e.key === 'Escape' && open) {
+      toggle(false);
+      return;
+    }
+    if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && String(e.key || '').toLowerCase() === 'b' && !isEditableTarget(e.target)) {
+      e.preventDefault();
+      toggle();
+    }
   });
-  document.addEventListener('DOMContentLoaded', () => renderDot());
-  overviewAsync().then(() => renderDot()).catch(() => {});
-  renderDot();
-  setInterval(renderDot, 2000);
+  document.addEventListener('DOMContentLoaded', () => dock.renderDot());
+  overviewAsync().then(() => dock.renderDot()).catch(() => {});
+  dock.renderDot();
+  setInterval(() => dock.renderDot(), 2000);
 }
 
 /** 菜单命令统一走这里，避免出现第二份配置界面 */
@@ -1605,9 +1098,13 @@ export function openPanel() {
   toggle(true);
 }
 
-/** 外部（如代理完成）要求刷新徽标时调用 */
+/** 外部（如代理完成或跨标签页同步）要求刷新徽标与面板时调用 */
 export function refreshPanel() {
   if (!root) return;
-  renderDot();
-  if (open) { renderLive(); renderDiag(); }
+  dock.renderDot();
+  if (open) {
+    if (rerenderPool) rerenderPool();
+    renderLive();
+    renderDiag();
+  }
 }

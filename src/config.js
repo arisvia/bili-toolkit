@@ -25,7 +25,8 @@ export const DEFAULTS = {
   timeoutMs: 15000, // 单次代理请求超时
   strategy: -1, // -1 = 未探测，运行时自动选
   debug: false,
-  codec: 'auto' // 编码偏好：auto | av1 | hevc | avc
+  codec: 'auto', // 编码偏好：auto | av1 | hevc | avc
+  preferCdn: false // 优选官源 CDN（将已知卡顿的 PCDN/MCDN 降权到备选末尾）
 };
 
 /** 视频编码偏好 */
