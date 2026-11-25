@@ -1,6 +1,6 @@
 {
   "name": "bili-toolkit",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "type": "module",
   "description": "B 站多账号多权益工具箱：多账号无缝漫游、软登出凭据保活、大会员权益借用、4K/杜比解锁",

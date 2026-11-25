@@ -3,6 +3,13 @@
 本项目所有显著变更均记录于此文件。
 版本格式遵循 [语义化版本 2.0.0 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [v1.4.1] - 2026-11-25
+
+### 优化与修复 (Improvements & Fixes)
+- **扫码登录失效修复**：生成二维码与轮询状态时补充 `source=main_web`，并从 `SecureCollectSDK` 读取 `b_ret` 风控令牌随轮询提交，修复手机确认后二维码立刻变成「已失效」（86038）、账号无法入池的问题。
+- **切号 SESSDATA 写入修复**：部分 Violentmonkey 未开启 HttpOnly Cookie 权限时，`GM.cookie.set` 会静默丢弃 SESSDATA 却回报成功，导致只换了 `bili_jct`/`DedeUserID`、刷新后整组被服务端还原。现在自动探测权限并退回非 HttpOnly 写入，写入后读回校验，失败则明确报错。
+- **首屏晚到接管加固**：晚到的钩子会先清空播放器已有的 SSR 试看绑定再包装 `updateRequestConfig`；配置就绪后提前注入会员弹窗隐藏样式；首屏账号数据晚于文档启动时按路径自动刷新一次，避免只能试看六分钟或切不了会员画质。
+
 ## [v1.4.0] - 2026-11-25
 
 ### 新增特性 (Features)

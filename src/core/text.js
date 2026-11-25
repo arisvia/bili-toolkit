@@ -317,7 +317,8 @@ export const TEXT = {
     poolEmpty: '账号池是空的，点左下角圆点打开面板添加账号。',
     cookieProblem: '账号 Cookie 有问题：',
     autoBorrow: '当前登录号没有大会员，已自动改用',
-    autoBorrowTail: '的权益取播放地址。'
+    autoBorrowTail: '的权益取播放地址。',
+    autoReload: '首屏账号数据晚到，已自动刷新一次以接管播放。'
   },
 
   /* --- 菜单命令与通知 --- */
