@@ -10,6 +10,9 @@ import { store } from './store.js';
 import { hasCookie } from './session.js';
 
 export function buildHookConfig(token) {
+  const enabled = store.isEnabled();
+  const hasB = hasCookie();
+  const patchUi = store.isPatchUi();
   return {
     ns: NS,
     token,
@@ -18,14 +21,13 @@ export function buildHookConfig(token) {
     sandboxEntries: ENDPOINTS.map((ep) => ({ host: ep.host, path: ep.path, method: ep.method })),
     localEntries: LOCAL_PATCH_PATHS.map((p) => ({ host: p.host, path: p.path })),
     timeoutMs: DEFAULTS.timeoutMs,
-    // 首屏必须先把 SSR 播放数据挡掉，强制播放器走 playurl —— 否则页面会直接
-    // 消费 A 账号的试看数据，代理根本没有机会接管。是否存在 B 账号只影响
-    // 代理是否真的换号（handleRequest 会再检查一次），不影响「先挡 SSR」。
-    hidePlayinfo: store.isEnabled(),
-    // 只把页面上的会员标志改成已开通，需要确实有可借用的 B 账号；没账号时
-    // 不能把正常用户伪造成大会员，否则会显示会员画质但拿不到流。
-    patchVip: store.isPatchUi() && hasCookie(),
-    patchUi: store.isPatchUi(),
+    // 首屏先挡掉 SSR 播放数据，强制播放器走 playurl（即便 GM 存储短暂未就绪也能防止先消费试看流）。
+    hidePlayinfo: enabled,
+    // 是否具备真实借用条件（总开关开启且有可用账号），用于控制播放器接管与 reload。
+    canBorrow: enabled && hasB,
+    // 是否改写页面会员标志并清理试看提示条 / 收银台：必须同时开启总开关、界面伪装且有可用账号。
+    patchVip: enabled && patchUi && hasB,
+    patchUi,
     prefetch: store.isPrefetch(),
     softLogout: store.isSoftLogout(),
     region: store.getRegion()
@@ -34,10 +36,14 @@ export function buildHookConfig(token) {
 
 /** 当前配置（用于 postMessage 推送时的增量更新） */
 export function liveConfig() {
+  const enabled = store.isEnabled();
+  const hasB = hasCookie();
+  const patchUi = store.isPatchUi();
   return {
-    hidePlayinfo: store.isEnabled(),
-    patchVip: store.isPatchUi() && hasCookie(),
-    patchUi: store.isPatchUi(),
+    hidePlayinfo: enabled,
+    canBorrow: enabled && hasB,
+    patchVip: enabled && patchUi && hasB,
+    patchUi,
     prefetch: store.isPrefetch(),
     softLogout: store.isSoftLogout(),
     region: store.getRegion()

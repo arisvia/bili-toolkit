@@ -678,7 +678,7 @@ div.bpx-player-toast-item
 
 **证据**：VIP 集 `https://www.bilibili.com/bangumi/play/ep3854825`（凡人修仙传 201 集）无钩子时 toast 文本完整包含上述提示；晚注入钩子后 12 秒内 `bodyHasGate:false`、`.bpx-player-toast-item` 为空、`window.player.__biliVipPlayerHooked:true`，且播放器经代理发出 `GET /ogv/player/playview`。
 
-**复验**：`npm test`（`test/hook.test.mjs` 第 [10b] 组）；真实浏览器探针 `D:\Files\Projects\pwtest\probe-vip-late.mjs`。
+**复验**：`npm test`（`test/hook.test.mjs` 第 [10b] 组）；Playwright 真实浏览器晚注入探针验证。
 
 ---
 
@@ -694,7 +694,7 @@ div.bpx-player-toast-item
 **修法**：
 
 1. `src/core/accounts.js` 的 `pool()` 不再在无数据时写空池；空池只在 `savePool()`（用户主动增删账号）或 `clearPool()` 时落盘；
-2. `buildHookConfig()` / `liveConfig()` 把 `hidePlayinfo`（挡 SSR、强制走代理）与 `patchVip`（会员 UI 伪装）拆开：`hidePlayinfo` 只看总开关，首屏就能挡住 SSR 试看数据；`patchVip` 仍要求 `hasCookie()`；
-3. `src/index.js` 在 `pool()` 后立即补推配置，并在 2 秒内每 100ms 重推，直到 `hasCookie()` 为真；钩子的 `applyCfg()` 收到 `patchVip=true` 后会接管已存在的 `window.player` 并触发 reload。
+2. `buildHookConfig()` / `liveConfig()` 将配置拆分为三个语义清晰的开关：`hidePlayinfo`（总开关开启时挡 SSR 与净化 `updateRequestConfig`）、`canBorrow`（总开关 + 有可用账号，控制 `hookPlayer` 接管与重载）、`patchVip`（总开关 + 界面伪装 + 有可用账号，控制会员标志改写与提示条/收银台清理）；
+3. `src/index.js` 在 `store.isEnabled() && !hasCookie()` 时静默轮询 GM 存储最多 15 秒（60 × 250ms），仅在 `hasCookie()` 真正就绪时补推一次配置并预热 wbi 密钥；钩子的 `applyCfg()` 收到 `canBorrow=true` 后立即接管已创建的播放器并触发 reload，且仅在番剧页或存在 `window.nano` 时按需启动有界监听。
 
-**复验**：真实浏览器探针 `D:\Files\Projects\pwtest\probe-userscript-delayed-store.mjs`（GM 存储延迟到 1200ms 才可读）从 `patchVip:false / playerHooked:false / 出现提示条` 变为全程 `patchVip:true / playerHooked:true / 无提示条`，并出现 `代理成功 ogv-playview-get`；`test/accounts.test.mjs` 第 [1] 组新增「无旧数据时不写空池」断言。
+**复验**：Playwright 真实浏览器延迟存储探针与 `test/hook.test.mjs` 回归用例（覆盖总开关关闭、空账号池、关闭界面伪装、延迟补推配置四类场景），以及 `test/accounts.test.mjs` 第 [1] 组「无旧数据时不写空池」断言。

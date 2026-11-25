@@ -20,6 +20,7 @@ function check(name, cond, extra) {
 }
 
 const TOKEN = 'test-token-1234';
+const allTeardowns = [];
 
 function makeEnv(cfgOverrides = {}, responder) {
   const listeners = { message: [], popstate: [] };
@@ -31,8 +32,19 @@ function makeEnv(cfgOverrides = {}, responder) {
   win.location = { href: 'https://www.bilibili.com/video/BV1xx', pathname: '/video/BV1xx', search: '' };
   win.history = { pushState: () => {}, replaceState: () => {} };
   win.console = { info() {}, warn() {}, error() {}, debug() {} };
-  win.setTimeout = setTimeout;
-  win.clearTimeout = clearTimeout;
+  const timeouts = new Set();
+  win.setTimeout = (fn, ms) => {
+    const h = setTimeout(() => {
+      timeouts.delete(h);
+      fn();
+    }, ms);
+    timeouts.add(h);
+    return h;
+  };
+  win.clearTimeout = (h) => {
+    timeouts.delete(h);
+    clearTimeout(h);
+  };
   const intervals = new Set();
   win.setInterval = (fn, ms) => {
     const h = setInterval(fn, ms);
@@ -43,7 +55,13 @@ function makeEnv(cfgOverrides = {}, responder) {
     intervals.delete(h);
     clearInterval(h);
   };
-  win.__teardown = () => intervals.forEach(clearInterval);
+  win.__teardown = () => {
+    timeouts.forEach(clearTimeout);
+    timeouts.clear();
+    intervals.forEach(clearInterval);
+    intervals.clear();
+  };
+  allTeardowns.push(win.__teardown);
   win.URL = URL;
   win.URLSearchParams = URLSearchParams;
   win.Headers = Headers;
@@ -421,6 +439,102 @@ console.log('\n[10b] 晚到的 window.player 也会被接管');
   env.win.__teardown();
 }
 
+console.log('\n[10c] 三开关解耦（总开关关 / 空池 / 关界面伪装 / 延迟补推）');
+{
+  // 1) 总开关关闭：所有接管与 UI 伪装均不生效
+  const offEnv = makeEnv({ hidePlayinfo: false, canBorrow: false, patchVip: false, patchUi: true });
+  const offPlayer = {
+    cfg: null,
+    reloaded: 0,
+    updateRequestConfig(n) { this.cfg = n; },
+    on() {},
+    reload() { this.reloaded++; }
+  };
+  offEnv.vmGlobal.nano = { createPlayer: () => offPlayer };
+  offEnv.vmGlobal.nano.createPlayer({ requestConfig: { reqHttpPlayUrlInfo: () => {} } });
+  offPlayer.updateRequestConfig({ reqHttpPlayUrlInfo: 'keep' });
+  offEnv.win.__PLAYURL_HYDRATE_DATA__ = { result: { video_info: { is_preview: 1 } } };
+  const offNav = await (await offEnv.win.fetch('https://api.bilibili.com/x/web-interface/nav')).json();
+  check('总开关关闭时不打 player 接管标记', !offPlayer.__biliVipPlayerHooked);
+  check('总开关关闭时不清空 updateRequestConfig', offPlayer.cfg && offPlayer.cfg.reqHttpPlayUrlInfo === 'keep');
+  check('总开关关闭时不改写 hydrate 试看标志', offEnv.win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 1);
+  check('总开关关闭时不伪造 nav vipStatus', offNav.data.vipStatus === 0);
+  offEnv.win.__teardown();
+
+  // 2) 开启但账号池为空（hidePlayinfo=true, canBorrow=false, patchVip=false）：
+  //    挡 SSR / 净化 updateRequestConfig，但不触发 hookPlayer，也不伪造 VIP 或删收银台
+  const emptyEnv = makeEnv({ hidePlayinfo: true, canBorrow: false, patchVip: false, patchUi: true });
+  let dialogRemoved = false;
+  emptyEnv.vmGlobal.document = {
+    documentElement: {},
+    querySelectorAll: () => [],
+    getElementById: (id) => (id === 'BilibiliVipDialog' ? { remove() { dialogRemoved = true; } } : null)
+  };
+  emptyEnv.vmGlobal.MutationObserver = class {
+    observe() {}
+    disconnect() {}
+  };
+  const emptyPlayer = {
+    cfg: null,
+    reloaded: 0,
+    updateRequestConfig(n) { this.cfg = n; },
+    on() {},
+    reload() { this.reloaded++; }
+  };
+  emptyEnv.vmGlobal.nano = { createPlayer: () => emptyPlayer };
+  emptyEnv.vmGlobal.nano.createPlayer({ requestConfig: { reqHttpPlayUrlInfo: () => {} } });
+  emptyPlayer.updateRequestConfig({ reqHttpPlayUrlInfo: 'strip-me', reqHttpPlayUrlInfoScope: [1] });
+  emptyEnv.win.__PLAYURL_HYDRATE_DATA__ = { result: { video_info: { is_preview: 1 } } };
+  const emptyNav = await (await emptyEnv.win.fetch('https://api.bilibili.com/x/web-interface/nav')).json();
+  check('空池时仍提前净化 updateRequestConfig', emptyPlayer.cfg && emptyPlayer.cfg.reqHttpPlayUrlInfo === undefined);
+  check('空池时不触发 hookPlayer 接管', !emptyPlayer.__biliVipPlayerHooked);
+  check('空池时不伪造 hydrate 试看标志', emptyEnv.win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 1);
+  check('空池时不伪造 nav vipStatus', emptyNav.data.vipStatus === 0);
+  check('空池时不误删 #BilibiliVipDialog', dialogRemoved === false);
+
+  // 模拟 GM 存储延迟就绪：先等初始 welcome 完成，再补推 cfg，验证立刻接管此前创建的播放器并触发 reload
+  await sleep(10);
+  emptyEnv.win.__dispatch({
+    type: 'cfg',
+    token: TOKEN,
+    cfg: { hidePlayinfo: true, canBorrow: true, patchVip: true, patchUi: true }
+  });
+  await sleep(80);
+  check('延迟补推 canBorrow=true 后立刻接管先前创建的播放器', emptyPlayer.__biliVipPlayerHooked === true);
+  check('延迟接管后触发 player.reload()', emptyPlayer.reloaded >= 1, emptyPlayer.reloaded);
+  check('延迟补推 patchVip=true 后才清理 #BilibiliVipDialog', dialogRemoved === true);
+  emptyEnv.win.__teardown();
+
+  // 3) 开启借用且有账号，但关闭界面伪装（patchUi=false, canBorrow=true, patchVip=false）：
+  //    播放器必须照常接管，但不能伪造 VIP UI 或删弹窗
+  const noUiEnv = makeEnv({ hidePlayinfo: true, canBorrow: true, patchVip: false, patchUi: false });
+  let noUiDialogRemoved = false;
+  noUiEnv.vmGlobal.document = {
+    documentElement: {},
+    querySelectorAll: () => [],
+    getElementById: (id) => (id === 'BilibiliVipDialog' ? { remove() { noUiDialogRemoved = true; } } : null)
+  };
+  noUiEnv.vmGlobal.MutationObserver = class {
+    observe() {}
+    disconnect() {}
+  };
+  const noUiPlayer = {
+    cfg: null,
+    updateRequestConfig(n) { this.cfg = n; },
+    on() {},
+    reload() {}
+  };
+  noUiEnv.vmGlobal.nano = { createPlayer: () => noUiPlayer };
+  noUiEnv.vmGlobal.nano.createPlayer({ requestConfig: {} });
+  noUiPlayer.updateRequestConfig({ reqHttpPlayUrlInfo: 'strip-me' });
+  noUiEnv.win.__PLAYURL_HYDRATE_DATA__ = { result: { video_info: { is_preview: 1 } } };
+  check('关闭界面伪装时仍接管播放器', noUiPlayer.__biliVipPlayerHooked === true);
+  check('关闭界面伪装时仍净化 updateRequestConfig', noUiPlayer.cfg && noUiPlayer.cfg.reqHttpPlayUrlInfo === undefined);
+  check('关闭界面伪装时不改写 hydrate VIP 标志', noUiEnv.win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 1);
+  check('关闭界面伪装时不删除 #BilibiliVipDialog', noUiDialogRemoved === false);
+  noUiEnv.win.__teardown();
+}
+
 console.log('[11] 软登出凭据保活拦截');
 {
   const { win, state } = makeEnv({}, (msg) => {
@@ -472,6 +586,8 @@ console.log('[11] 软登出凭据保活拦截');
 
   win.__teardown();
 }
+
+allTeardowns.forEach((fn) => fn());
 
 console.log('');
 if (failed) {
