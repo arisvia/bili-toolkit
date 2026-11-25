@@ -26,13 +26,26 @@ function check(name, cond, extra) {
 async function loadWbi() {
   const res = await esbuild.build({
     entryPoints: [path.join(ROOT, 'src/core/wbi.js')],
-    bundle: true, format: 'esm', write: false, platform: 'neutral', target: 'es2022', logLevel: 'silent'
+    bundle: true,
+    format: 'esm',
+    write: false,
+    platform: 'neutral',
+    target: 'es2022',
+    logLevel: 'silent'
   });
-  return import('data:text/javascript;base64,' + Buffer.from(res.outputFiles[0].text, 'utf8').toString('base64'));
+  return import(
+    'data:text/javascript;base64,' + Buffer.from(res.outputFiles[0].text, 'utf8').toString('base64')
+  );
 }
 
 async function api(url) {
-  const r = await fetch(url, { headers: { Referer: 'https://www.bilibili.com/', Origin: 'https://www.bilibili.com', 'User-Agent': 'Mozilla/5.0' } });
+  const r = await fetch(url, {
+    headers: {
+      Referer: 'https://www.bilibili.com/',
+      Origin: 'https://www.bilibili.com',
+      'User-Agent': 'Mozilla/5.0'
+    }
+  });
   return r.json();
 }
 
@@ -66,7 +79,9 @@ const oldWbi = await fetch('https://api.bilibili.com/x/web-interface/wbi/img', {
 let oldWbiCode = 'HTTP ' + oldWbi.status;
 try {
   oldWbiCode = (await oldWbi.json()).code;
-} catch { /* 非 JSON，保留 HTTP 状态码 */ }
+} catch {
+  /* 非 JSON，保留 HTTP 状态码 */
+}
 console.log(`      /x/web-interface/wbi/img → ${oldWbiCode}`);
 console.log(
   Number(oldWbiCode) === 0
@@ -114,7 +129,9 @@ check(
   q127.data?.quality > q16.data?.quality,
   `qn16→${q16.data?.quality} qn127→${q127.data?.quality}`
 );
-console.log(`      accept_quality = ${JSON.stringify(q127.data?.accept_quality)}（与 quality 不相等，别拿它反推）`);
+console.log(
+  `      accept_quality = ${JSON.stringify(q127.data?.accept_quality)}（与 quality 不相等，别拿它反推）`
+);
 
 console.log('\n[4] w_rid 当前是否被服务端强制校验（仅记录事实，不作为断言）');
 const noRid = new URL(signed.href);
@@ -147,13 +164,21 @@ check('/x/player/wbi/v2 可用', v2.code === 0, `code=${v2.code}`);
 check(
   '该接口响应里确实没有 accept_*（这是把 v2 移出代理、只做本地伪装的原因）',
   Object.keys(v2.data || {}).filter((k) => k.startsWith('accept')).length === 0,
-  Object.keys(v2.data || {}).filter((k) => k.startsWith('accept')).join(',')
+  Object.keys(v2.data || {})
+    .filter((k) => k.startsWith('accept'))
+    .join(',')
 );
 const pu = await api(signed.href);
-check('accept_quality 在 playurl 响应里', Array.isArray(pu.data?.accept_quality), JSON.stringify(pu.data?.accept_quality));
+check(
+  'accept_quality 在 playurl 响应里',
+  Array.isArray(pu.data?.accept_quality),
+  JSON.stringify(pu.data?.accept_quality)
+);
 const legacyV2 = await api(`https://api.bilibili.com/x/player/v2?bvid=${sample.bvid}&cid=${sample.cid}`);
 check('/x/player/v2 可用（旧版播放器）', legacyV2.code === 0, `code=${legacyV2.code}`);
-const live = await api('https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo?room_id=1&protocol=0,1&format=0,1,2,0&codec=0&qn=10000&platform=web&ptype=8');
+const live = await api(
+  'https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo?room_id=1&protocol=0,1&format=0,1,2,0&codec=0&qn=10000&platform=web&ptype=8'
+);
 check('/xlive/web-room/v2/index/getRoomPlayInfo 路径正确', live.code === 0, `code=${live.code}`);
 
 console.log('\n[7] 区域（geoip）参数对服务端是否真的有影响（诚实边界，不可夸大）');
@@ -170,7 +195,9 @@ const distinct = [...new Set(geoResults.map((r) => JSON.stringify(r.region)))];
 console.log(`      基准 ip_region = ${JSON.stringify(baselineRegion)}`);
 console.log(`      ${GEOIPS.length} 种 geoip 取值 → ${distinct.length} 种不同的 ip_region`);
 if (distinct.length > 1) {
-  console.log('      ' + geoResults.map((r) => `${r.g}=${r.code}:${JSON.stringify(r.region)}`).join('\n      '));
+  console.log(
+    '      ' + geoResults.map((r) => `${r.g}=${r.code}:${JSON.stringify(r.region)}`).join('\n      ')
+  );
 }
 check(
   `${GEOIPS.length} 种 geoip 取值均不改变服务端 ip_region（地区只能改页面渲染形态）`,
@@ -193,11 +220,7 @@ const dashMax = dashIds.length ? Math.max(...dashIds) : 0;
 const acceptList = dashProbe?.data?.accept_quality || [];
 console.log(`      匿名 accept_quality = ${JSON.stringify(acceptList)}`);
 console.log(`      匿名 dash.video 最大流 = ${dashMax}`);
-check(
-  'accept_quality 是非空数组（否则这段验证无意义）',
-  acceptList.length > 0,
-  JSON.stringify(acceptList)
-);
+check('accept_quality 是非空数组（否则这段验证无意义）', acceptList.length > 0, JSON.stringify(acceptList));
 check(
   '匿名 dash 里实际存在的流 低于 清单所列 —— 清单说的是「片子有什么」，不是「你能拿到什么」',
   dashMax > 0 && dashMax < Math.max(...acceptList),
@@ -214,9 +237,7 @@ if (other) {
   );
   const a2 = p2?.data?.accept_quality || [];
   console.log(`      另一部片子 ${other.bvid} 的 accept_quality = ${JSON.stringify(a2)}`);
-  console.log(
-    '      → 两部片子可以不同；同一片子换账号则不变（后者见 findings §4 的 B/匿名对照）'
-  );
+  console.log('      → 两部片子可以不同；同一片子换账号则不变（后者见 findings §4 的 B/匿名对照）');
 }
 
 console.log('');

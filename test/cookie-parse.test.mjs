@@ -8,23 +8,40 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let failed = 0;
 function check(name, cond, extra) {
   if (cond) console.log(`  \x1b[32m✔\x1b[0m ${name}`);
-  else { failed++; console.error(`  \x1b[31m✖\x1b[0m ${name}${extra !== undefined ? '  → ' + JSON.stringify(extra) : ''}`); }
+  else {
+    failed++;
+    console.error(`  \x1b[31m✖\x1b[0m ${name}${extra !== undefined ? '  → ' + JSON.stringify(extra) : ''}`);
+  }
 }
 
 const res = await esbuild.build({
   entryPoints: [path.join(ROOT, 'src/core/cookie-parse.js')],
-  bundle: true, format: 'esm', write: false, platform: 'neutral', target: 'es2022', logLevel: 'silent'
+  bundle: true,
+  format: 'esm',
+  write: false,
+  platform: 'neutral',
+  target: 'es2022',
+  logLevel: 'silent'
 });
-const M = await import('data:text/javascript;base64,' + Buffer.from(res.outputFiles[0].text, 'utf8').toString('base64'));
+const M = await import(
+  'data:text/javascript;base64,' + Buffer.from(res.outputFiles[0].text, 'utf8').toString('base64')
+);
 const { parseCookieText, pickFields, joinCookie, sortFields, tierOf } = M;
 
 /** 打包并以 data: URL 加载单个模块（避开相对 import 与浏览器 API） */
 async function load(rel) {
   const r = await esbuild.build({
     entryPoints: [path.join(ROOT, rel)],
-    bundle: true, format: 'esm', write: false, platform: 'neutral', target: 'es2022', logLevel: 'silent'
+    bundle: true,
+    format: 'esm',
+    write: false,
+    platform: 'neutral',
+    target: 'es2022',
+    logLevel: 'silent'
   });
-  return import('data:text/javascript;base64,' + Buffer.from(r.outputFiles[0].text, 'utf8').toString('base64'));
+  return import(
+    'data:text/javascript;base64,' + Buffer.from(r.outputFiles[0].text, 'utf8').toString('base64')
+  );
 }
 
 console.log('\n[1] DevTools 12 列 TSV');
@@ -39,7 +56,10 @@ console.log('\n[1] DevTools 12 列 TSV');
   ].join('\n');
   const { fields, format } = parseCookieText(tsv);
   check('识别为多列表格', format.includes('多列') || format.includes('12'), format);
-  check('SESSDATA 值完整且未被其它列污染', fields.SESSDATA === sess, { got: fields.SESSDATA?.length, want: 222 });
+  check('SESSDATA 值完整且未被其它列污染', fields.SESSDATA === sess, {
+    got: fields.SESSDATA?.length,
+    want: 222
+  });
   check('bili_jct 正确', fields.bili_jct === 'b'.repeat(32));
   check('只解析出 4 个字段（没有把列名当 cookie）', Object.keys(fields).length === 4, Object.keys(fields));
   check('分级正确', tierOf('SESSDATA').tier === 'required' && tierOf('bili_jct').tier === 'ogv');
@@ -56,7 +76,11 @@ console.log('\n[2] Cookie 字符串（含 ; 和引号的字段）');
   check('bili_jct 正确', fields.bili_jct === 'csrf456');
   check('buvid3 正确', fields.buvid3 === 'dev789');
   check('DedeUserID 正确（bmg_af_sc 里的 ; 没把它切断）', fields.DedeUserID === '42', fields.DedeUserID);
-  check('bmg_af_sc 完整保留（含引号与花括号）', (fields.bmg_af_sc || '').includes('i1-sgp') || (fields.bmg_af_sc || '').startsWith('{"none"'), fields.bmg_af_sc);
+  check(
+    'bmg_af_sc 完整保留（含引号与花括号）',
+    (fields.bmg_af_sc || '').includes('i1-sgp') || (fields.bmg_af_sc || '').startsWith('{"none"'),
+    fields.bmg_af_sc
+  );
   check('sid 也在（解析层不丢弃，由 preset 决定）', fields.sid === 'SID_SHOULD_EXCLUDE');
 }
 
@@ -75,15 +99,28 @@ console.log('\n[3] Chrome 导出的 JSON');
 console.log('\n[4] 预设挑选');
 {
   const fields = {
-    SESSDATA: '1', bili_jct: '2', DedeUserID: '3', buvid3: '4',
-    sid: '5', bmg_af_sc: '6', rpdid: '7'
+    SESSDATA: '1',
+    bili_jct: '2',
+    DedeUserID: '3',
+    buvid3: '4',
+    sid: '5',
+    bmg_af_sc: '6',
+    rpdid: '7'
   };
   const min = pickFields(fields, 'min');
   const ess = pickFields(fields, 'essential');
   const all = pickFields(fields, 'all');
-  check('min 只含 SESSDATA + bili_jct', min.length === 2 && min.includes('SESSDATA') && min.includes('bili_jct'), min);
+  check(
+    'min 只含 SESSDATA + bili_jct',
+    min.length === 2 && min.includes('SESSDATA') && min.includes('bili_jct'),
+    min
+  );
   // 默认集是「借用 + 切号都够」：身份字段全留，设备字段全不留
-  check('essential 含全部身份字段', ['SESSDATA', 'bili_jct', 'DedeUserID', 'sid'].every((k) => ess.includes(k)), ess);
+  check(
+    'essential 含全部身份字段',
+    ['SESSDATA', 'bili_jct', 'DedeUserID', 'sid'].every((k) => ess.includes(k)),
+    ess
+  );
   check('essential 不含设备字段（实测无影响，且切号时不该动）', !ess.includes('buvid3'), ess);
   check('essential 不含无关字段', !ess.includes('bmg_af_sc') && !ess.includes('rpdid'), ess);
   check('sid 是身份字段不是「别混用」', ess.includes('sid'), ess);
@@ -98,7 +135,16 @@ console.log('\n[4] 预设挑选');
 console.log('\n[4b] 设备字段分级与切号白名单');
 {
   // 实测依据：npm run verify:cookie 逐字段消融，删掉除 SESSDATA 外的字段响应无变化
-  const deviceKeys = ['buvid3', 'buvid4', 'bili_ticket', 'bili_ticket_expires', 'buvid_fp', 'b_nut', 'b_lsid', '_uuid'];
+  const deviceKeys = [
+    'buvid3',
+    'buvid4',
+    'bili_ticket',
+    'bili_ticket_expires',
+    'buvid_fp',
+    'b_nut',
+    'b_lsid',
+    '_uuid'
+  ];
   for (const k of deviceKeys) {
     check(`${k} 归为「浏览器自带」`, tierOf(k).tier === 'auto', tierOf(k));
   }
@@ -108,14 +154,27 @@ console.log('\n[4b] 设备字段分级与切号白名单');
   // 切号白名单里绝不能出现设备字段：否则每次切号都会把它们当「旧号残留」删掉，
   // 破坏浏览器自己的设备指纹（这个 bug 真实发生过）
   const { IDENTITY_COOKIE_KEYS, HTTP_ONLY_COOKIE_KEYS } = await load('src/config.js');
-  check('切号白名单不含任何设备字段', !IDENTITY_COOKIE_KEYS.some((k) => deviceKeys.includes(k)), IDENTITY_COOKIE_KEYS);
-  check('切号白名单只含身份字段', IDENTITY_COOKIE_KEYS.join() === 'SESSDATA,bili_jct,DedeUserID,DedeUserID__ckMd5,sid', IDENTITY_COOKIE_KEYS);
+  check(
+    '切号白名单不含任何设备字段',
+    !IDENTITY_COOKIE_KEYS.some((k) => deviceKeys.includes(k)),
+    IDENTITY_COOKIE_KEYS
+  );
+  check(
+    '切号白名单只含身份字段',
+    IDENTITY_COOKIE_KEYS.join() === 'SESSDATA,bili_jct,DedeUserID,DedeUserID__ckMd5,sid',
+    IDENTITY_COOKIE_KEYS
+  );
   // 实测：真实浏览器 Cookie jar 里只有 SESSDATA 是 HttpOnly，
   // bili_jct / sid / DedeUserID 都不是。站点自己的 axios 拦截器
   // 从 document.cookie 读 bili_jct 当 csrf，标成 HttpOnly 会让投币/收藏/
   // 稍后再看/评论一律 -111（已在真机复现）。
-  check('HttpOnly 只给 SESSDATA', [...HTTP_ONLY_COOKIE_KEYS].join() === 'SESSDATA', [...HTTP_ONLY_COOKIE_KEYS]);
-  check('bili_jct 不能标 HttpOnly（站点要从 document.cookie 读 csrf）', !HTTP_ONLY_COOKIE_KEYS.has('bili_jct'));
+  check('HttpOnly 只给 SESSDATA', [...HTTP_ONLY_COOKIE_KEYS].join() === 'SESSDATA', [
+    ...HTTP_ONLY_COOKIE_KEYS
+  ]);
+  check(
+    'bili_jct 不能标 HttpOnly（站点要从 document.cookie 读 csrf）',
+    !HTTP_ONLY_COOKIE_KEYS.has('bili_jct')
+  );
   check('sid 不能标 HttpOnly（站点上本就不是）', !HTTP_ONLY_COOKIE_KEYS.has('sid'));
   check('DedeUserID 不标 HttpOnly（站点上本来就不是）', !HTTP_ONLY_COOKIE_KEYS.has('DedeUserID'));
 }
@@ -125,7 +184,11 @@ console.log('\n[5] 排序');
   const sorted = sortFields(['rpdid', 'buvid3', 'sid', 'bili_jct', 'SESSDATA', 'DedeUserID']);
   check('必需排最前', sorted[0] === 'SESSDATA', sorted);
   check('番剧紧随其后', sorted[1] === 'bili_jct', sorted);
-  check('身份字段（切号用）排在设备字段之前', sorted.indexOf('DedeUserID') < sorted.indexOf('buvid3'), sorted);
+  check(
+    '身份字段（切号用）排在设备字段之前',
+    sorted.indexOf('DedeUserID') < sorted.indexOf('buvid3'),
+    sorted
+  );
   check('设备字段排在无关字段之前', sorted.indexOf('buvid3') < sorted.indexOf('rpdid'), sorted);
   check('无关字段排最后', sorted[sorted.length - 1] === 'rpdid', sorted);
 }
@@ -142,5 +205,8 @@ console.log('\n[6] 空输入不炸');
 }
 
 console.log('');
-if (failed) { console.error(`\x1b[31m${failed} 项失败\x1b[0m`); process.exit(1); }
+if (failed) {
+  console.error(`\x1b[31m${failed} 项失败\x1b[0m`);
+  process.exit(1);
+}
 console.log('\x1b[32m全部通过\x1b[0m');

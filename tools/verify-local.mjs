@@ -42,9 +42,16 @@ const cred = loadCredentials();
 async function loadWbi() {
   const res = await esbuild.build({
     entryPoints: [path.join(ROOT, 'src/core/wbi.js')],
-    bundle: true, format: 'esm', write: false, platform: 'neutral', target: 'es2022', logLevel: 'silent'
+    bundle: true,
+    format: 'esm',
+    write: false,
+    platform: 'neutral',
+    target: 'es2022',
+    logLevel: 'silent'
   });
-  return import('data:text/javascript;base64,' + Buffer.from(res.outputFiles[0].text, 'utf8').toString('base64'));
+  return import(
+    'data:text/javascript;base64,' + Buffer.from(res.outputFiles[0].text, 'utf8').toString('base64')
+  );
 }
 
 const parse = (s) => {
@@ -55,7 +62,10 @@ const parse = (s) => {
   }
   return o;
 };
-const clean = (s) => String(s).replace(/[\r\n]+/g, '; ').trim();
+const clean = (s) =>
+  String(s)
+    .replace(/[\r\n]+/g, '; ')
+    .trim();
 const maskMid = (m) => (SHOW_MID ? String(m) : String(m).replace(/^(\d{2})\d+(\d{2})$/, '$1****$2'));
 
 const H = {
@@ -78,7 +88,6 @@ async function req(url, opts = {}) {
     return { code: 'non-json', raw: text.slice(0, 120) };
   }
 }
-
 
 function describePlayurl(j) {
   const d = j && j.data;
@@ -113,14 +122,19 @@ console.log(`Cookie 来源：${cred.source}`);
 const pa = parse(cookieA);
 const pb = parse(cookieB);
 const mark = (v) => (v ? '有' : '缺');
-console.log(`A 字段：${Object.keys(pa).length} 项  SESSDATA ${mark(pa.SESSDATA)}｜bili_jct ${mark(pa.bili_jct)}｜DedeUserID ${mark(pa.DedeUserID)}｜buvid3 ${mark(pa.buvid3)}`);
-console.log(`B 字段：${Object.keys(pb).length} 项  SESSDATA ${mark(pb.SESSDATA)}｜bili_jct ${mark(pb.bili_jct)}｜DedeUserID ${mark(pb.DedeUserID)}｜buvid3 ${mark(pb.buvid3)}`);
+console.log(
+  `A 字段：${Object.keys(pa).length} 项  SESSDATA ${mark(pa.SESSDATA)}｜bili_jct ${mark(pa.bili_jct)}｜DedeUserID ${mark(pa.DedeUserID)}｜buvid3 ${mark(pa.buvid3)}`
+);
+console.log(
+  `B 字段：${Object.keys(pb).length} 项  SESSDATA ${mark(pb.SESSDATA)}｜bili_jct ${mark(pb.bili_jct)}｜DedeUserID ${mark(pb.DedeUserID)}｜buvid3 ${mark(pb.buvid3)}`
+);
 
 const warnB = [];
 if (!pb.DedeUserID) warnB.push('DedeUserID 缺失');
 if (!pb.buvid3 && !pb.buvid4) warnB.push('buvid3/buvid4 缺失（可能 -412）');
 if (!pb.bili_jct) warnB.push('bili_jct 缺失（番剧 OGV 会失败）');
-if (warnB.length) console.log(`  ⚠ B 建议补齐：${warnB.join('、')} —— 跑 npm run probe:cookie 可实测各字段作用`);
+if (warnB.length)
+  console.log(`  ⚠ B 建议补齐：${warnB.join('、')} —— 跑 npm run probe:cookie 可实测各字段作用`);
 if (pa.SESSDATA === pb.SESSDATA) {
   console.error('\n✖ A 和 B 的 SESSDATA 相同，请确认贴的是两个不同账号。\n');
   process.exit(2);
@@ -129,15 +143,26 @@ if (pa.SESSDATA === pb.SESSDATA) {
 console.log('\n[1] 身份与会员状态');
 const navA = (await req('https://api.bilibili.com/x/web-interface/nav', { cookie: cookieA })).json;
 const navB = (await req('https://api.bilibili.com/x/web-interface/nav', { cookie: cookieB })).json;
-if (!navA || navA.code !== 0 || !navA.data?.isLogin) { console.error('✖ A 的 Cookie 无效（nav 未登录）'); process.exit(2); }
-if (!navB || navB.code !== 0 || !navB.data?.isLogin) { console.error('✖ B 的 Cookie 无效（nav 未登录）'); process.exit(2); }
-const vipText = (d) => (d.vipStatus === 1 ? `大会员(${d.vipType === 1 ? '月度' : d.vipType === 2 ? '年度' : '?'})` : '非会员');
+if (!navA || navA.code !== 0 || !navA.data?.isLogin) {
+  console.error('✖ A 的 Cookie 无效（nav 未登录）');
+  process.exit(2);
+}
+if (!navB || navB.code !== 0 || !navB.data?.isLogin) {
+  console.error('✖ B 的 Cookie 无效（nav 未登录）');
+  process.exit(2);
+}
+const vipText = (d) =>
+  d.vipStatus === 1 ? `大会员(${d.vipType === 1 ? '月度' : d.vipType === 2 ? '年度' : '?'})` : '非会员';
 console.log(line('A', `${navA.data.uname}  mid=${maskMid(navA.data.mid)}  ${vipText(navA.data)}`));
 console.log(line('B', `${navB.data.uname}  mid=${maskMid(navB.data.mid)}  ${vipText(navB.data)}`));
-if (navB.data.vipStatus !== 1) console.error('  ⚠ B 不是大会员，下面的画质对比不会体现差异（脚本无法凭空造权益）');
+if (navB.data.vipStatus !== 1)
+  console.error('  ⚠ B 不是大会员，下面的画质对比不会体现差异（脚本无法凭空造权益）');
 
 const keys = extractWbiKeys(navB) || extractWbiKeys(navA);
-if (!keys) { console.error('✖ 拿不到 wbi 密钥'); process.exit(2); }
+if (!keys) {
+  console.error('✖ 拿不到 wbi 密钥');
+  process.exit(2);
+}
 console.log(line('wbi mixinKey', keys.mixinKey));
 
 console.log('\n[2] 选一个测试视频');
@@ -147,8 +172,12 @@ if (!bvid) {
   const popular = (await req('https://api.bilibili.com/x/web-interface/popular?ps=5&pn=1')).json;
   bvid = popular.data.list[0].bvid;
 }
-const view = (await req(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, { cookie: cookieA })).json;
-if (view.code !== 0) { console.error('✖ 视频不存在：' + view.message); process.exit(2); }
+const view = (await req(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, { cookie: cookieA }))
+  .json;
+if (view.code !== 0) {
+  console.error('✖ 视频不存在：' + view.message);
+  process.exit(2);
+}
 cid = view.data.cid;
 console.log(line('bvid / cid', `${bvid} / ${cid}`));
 console.log(line('标题', (view.data.title || '').slice(0, 40)));
@@ -161,7 +190,12 @@ const buildUrl = (qn) =>
 
 console.log('\n[3] 三个关键对照（这是本项目的核心验证）');
 const rA = (await req(buildUrl(32), { cookie: cookieA })).json;
-console.log(line('Q1  A + 页面原始参数(qn=32)', JSON.stringify(describePlayurl(rA).quality) + '  ← 旧脚本之前拿到的就是这种'));
+console.log(
+  line(
+    'Q1  A + 页面原始参数(qn=32)',
+    JSON.stringify(describePlayurl(rA).quality) + '  ← 旧脚本之前拿到的就是这种'
+  )
+);
 
 const rB = (await req(buildUrl(32), { cookie: cookieB })).json;
 const bLow = describePlayurl(rB);
@@ -178,12 +212,17 @@ console.log(line('Q3 的 support_formats', JSON.stringify(bUp.formats)));
 console.log(line('Q3 音视频流数量', `dash video=${bUp.dash} audio=${bUp.audio}`));
 
 console.log('\n[5] 校验我们把 /x/player/wbi/v2 移出代理的决定');
-const v2B = (await req(`https://api.bilibili.com/x/player/wbi/v2?bvid=${bvid}&cid=${cid}`, { cookie: cookieB })).json;
+const v2B = (
+  await req(`https://api.bilibili.com/x/player/wbi/v2?bvid=${bvid}&cid=${cid}`, { cookie: cookieB })
+).json;
 const acceptKeys = Object.keys(v2B.data || {}).filter((k) => k.startsWith('accept'));
 console.log(line('登录态下 v2 的 accept_* 字段', acceptKeys.length ? acceptKeys.join(',') : '（仍然没有）'));
-console.log('  ⇒ ' + (acceptKeys.length
-  ? '登录态下 v2 确实有 accept_* —— 结论变了，需重新评估是否该把 v2 纳入代理'
-  : '确认 accept_* 只在 playurl 里，本地伪装即可，不必多发一次请求'));
+console.log(
+  '  ⇒ ' +
+    (acceptKeys.length
+      ? '登录态下 v2 确实有 accept_* —— 结论变了，需重新评估是否该把 v2 纳入代理'
+      : '确认 accept_* 只在 playurl 里，本地伪装即可，不必多发一次请求')
+);
 
 console.log('\n[6] 参数抬高是否会引入副作用（对比 Q2/Q3 的流数量）');
 if (bUp.dash > bLow.dash || bUp.quality > bLow.quality) {
@@ -198,14 +237,15 @@ if (RAW_EPID) {
   if (!csrf) {
     console.log('  ⚠ B 的 Cookie 里没有 bili_jct，跳过（番剧解锁必需）');
   } else {
-    const url =
-      `https://api.bilibili.com/ogv/player/playview?ep_id=${RAW_EPID}&qn=127&fnver=0&fnval=4048&fourk=1&otype=json&csrf=${csrf}`;
-    const ogv = (await req(url, {
-      cookie: cookieB,
-      method: 'POST',
-      headers: { ...H, Cookie: cookieB, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ep_id: Number(RAW_EPID), csrf, business: 'play' })
-    })).json;
+    const url = `https://api.bilibili.com/ogv/player/playview?ep_id=${RAW_EPID}&qn=127&fnver=0&fnval=4048&fourk=1&otype=json&csrf=${csrf}`;
+    const ogv = (
+      await req(url, {
+        cookie: cookieB,
+        method: 'POST',
+        headers: { ...H, Cookie: cookieB, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ep_id: Number(RAW_EPID), csrf, business: 'play' })
+      })
+    ).json;
     const vi = ogv.data?.video_info;
     console.log(line('playview code', ogv.code + ' ' + (ogv.message || '')));
     if (vi) console.log(line('video_info.quality', vi.quality));

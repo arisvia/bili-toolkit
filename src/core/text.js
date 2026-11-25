@@ -115,7 +115,8 @@ export const TEXT = {
     /** 不在池中，但脚本读得到它的 Cookie（运行时探测的结果，不是假设） */
     autoImportTip: '浏览器当前登录：',
     /** 不在池中且读不到凭证 —— 文案只说「本浏览器读不到」，不断言 HttpOnly */
-    notInPoolTip: '浏览器当前登录的这个号还不在池子里，且本浏览器读不到它的登录 Cookie，需要从 DevTools 复制一次',
+    notInPoolTip:
+      '浏览器当前登录的这个号还不在池子里，且本浏览器读不到它的登录 Cookie，需要从 DevTools 复制一次',
     notLoggedInTip: '浏览器当前未登录。点击账号卡片上的「登录到此号」即可写入 Cookie 并以此身份浏览。',
     labels: {
       current: '登录中',
@@ -176,7 +177,8 @@ export const TEXT = {
        * 这种状态下最危险的是界面还在显示「登录中」：用户会以为池子是准的。
        * 所以除了提示，还要把那个标记降级（见 panel.js 的 poolRow）。
        */
-      browserMismatch: '池里记着这个号是当前登录，但浏览器实际登录的不是它 —— 多半是在别处换了登录。借用照常工作，但「登录中」的标记已不可信；切号或加入池子后会自动对齐。',
+      browserMismatch:
+        '池里记着这个号是当前登录，但浏览器实际登录的不是它 —— 多半是在别处换了登录。借用照常工作，但「登录中」的标记已不可信；切号或加入池子后会自动对齐。',
       rechecking: '重新探测中…',
       recheckingAll: '正在批量重探…',
       recheckAllDone: '全部重探完成：',
@@ -235,7 +237,7 @@ export const TEXT = {
       // 这里原本有 clearConfirm（「清除已保存的 Cookie？」）。清空按钮只清输入框、
       // 不动账号池，所以没有确认步骤，文案也就没人用。
     },
-    
+
     parsed: (format, n) => `识别为${format} · ${n} 项`,
     missing: '未找到 SESSDATA',
 

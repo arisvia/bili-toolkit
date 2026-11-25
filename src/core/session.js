@@ -6,12 +6,26 @@
  */
 import { STRATEGIES } from '../config.js';
 import { store } from './store.js';
-import { sanitizeCookie, parseCookie, backfillDeviceCookies, validateCookie, cookieFingerprint } from './cookie.js';
+import {
+  sanitizeCookie,
+  parseCookie,
+  backfillDeviceCookies,
+  validateCookie,
+  cookieFingerprint
+} from './cookie.js';
 import { httpRequest, parseJsonSafe } from './transport.js';
 import { extractWbiKeys } from './wbi.js';
 import { extractMidFromNav, extractVipFromNav } from './patch.js';
 import { log } from './log.js';
-import { borrowCookie, borrowAccountId, activeAccount, byId, markProbed, needsProbe, addAccount } from './accounts.js';
+import {
+  borrowCookie,
+  borrowAccountId,
+  activeAccount,
+  byId,
+  markProbed,
+  needsProbe,
+  addAccount
+} from './accounts.js';
 
 const NAV_URL = 'https://api.bilibili.com/x/web-interface/nav';
 const WBI_URL = 'https://api.bilibili.com/x/web-interface/wbi/img';
@@ -131,7 +145,13 @@ async function fetchWbiImgEndpoint() {
   });
   const keys = extractWbiKeys(parseJsonSafe(res.text));
   if (!keys) {
-    log.warn('wbi 密钥获取失败（nav=' + (!res.ok ? 'fail' : 'no-keys') + '，img端点=' + (res.ok ? 'no-keys' : 'http' + res.status) + '）。本次请求不抬高画质参数。');
+    log.warn(
+      'wbi 密钥获取失败（nav=' +
+        (!res.ok ? 'fail' : 'no-keys') +
+        '，img端点=' +
+        (res.ok ? 'no-keys' : 'http' + res.status) +
+        '）。本次请求不抬高画质参数。'
+    );
     return null;
   }
   return saveKeys(keys, 'wbi/img');
@@ -238,8 +258,23 @@ export async function probeIdentity(cookie, opts = {}) {
     }
     mirrorLegacy(raw, account, isSameAsBrowser ? store.getStrategy() : i);
 
-    log.info('账号验证通过：', account.uname, 'mid=' + account.mid, '会员', account.vipStatus === 1 ? '大会员' : '非会员', '发送方式', i + 1);
-    return { ok: true, reason: '', account, aAccount, strategy: isSameAsBrowser ? store.getStrategy() : i, id: account.id };
+    log.info(
+      '账号验证通过：',
+      account.uname,
+      'mid=' + account.mid,
+      '会员',
+      account.vipStatus === 1 ? '大会员' : '非会员',
+      '发送方式',
+      i + 1
+    );
+    return {
+      ok: true,
+      reason: '',
+      account,
+      aAccount,
+      strategy: isSameAsBrowser ? store.getStrategy() : i,
+      id: account.id
+    };
   }
 
   invalidateMixinKey();
@@ -247,7 +282,11 @@ export async function probeIdentity(cookie, opts = {}) {
     return {
       ok: false,
       reason:
-        '所有发送方式返回的都还是当前浏览器账号（' + (aAccount.uname || '未知') + '，mid=' + (aAccount.mid || '?') + '）。' +
+        '所有发送方式返回的都还是当前浏览器账号（' +
+        (aAccount.uname || '未知') +
+        '，mid=' +
+        (aAccount.mid || '?') +
+        '）。' +
         '请确认粘贴的是目标账号的 Cookie，且当前脚本管理器支持指定 Cookie（建议 Tampermonkey 4.18+）。'
     };
   }
@@ -375,7 +414,11 @@ export function quickCheck() {
   const v = validateCookie(sanitizeCookie(raw));
   if (!v.ok) return { ok: false, msg: v.problems.join('；') };
   if (v.warnings.length) {
-    return { ok: true, warn: v.warnings.join('\n'), msg: '可用，但建议补齐：' + v.warnings[0] + (v.warnings.length > 1 ? ` 等 ${v.warnings.length} 项` : '') };
+    return {
+      ok: true,
+      warn: v.warnings.join('\n'),
+      msg: '可用，但建议补齐：' + v.warnings[0] + (v.warnings.length > 1 ? ` 等 ${v.warnings.length} 项` : '')
+    };
   }
   return { ok: true, msg: '字段完整' };
 }

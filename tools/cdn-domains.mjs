@@ -16,7 +16,10 @@ import { loadCredentials, printCredentialHelp } from './credentials.mjs';
 
 const cred = loadCredentials();
 if (!cred.b) printCredentialHelp('B');
-const B = String(cred.b).replace(/[\r\n]+/g, '; ').replace(/;\s*;/g, '; ').trim();
+const B = String(cred.b)
+  .replace(/[\r\n]+/g, '; ')
+  .replace(/;\s*;/g, '; ')
+  .trim();
 
 const HEADERS = {
   Referer: 'https://www.bilibili.com/',

@@ -135,7 +135,10 @@ console.log('\n[1] 未配置 Cookie 时必须放行');
 {
   const ctx = makeContext();
   const api = await loadProxyModule(ctx);
-  const r = await api.handleRequest({ url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=1', method: 'GET' });
+  const r = await api.handleRequest({
+    url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=1',
+    method: 'GET'
+  });
   check('返回 passthrough', r.passthrough === true, r);
   check('没有发出任何请求', calls.length === 0, calls.length);
 }
@@ -149,14 +152,26 @@ console.log('\n[2] 普通视频：抬高画质 + 重签 wbi');
 
   let seenPlayurl = null;
   replies.set('https://api.bilibili.com/x/web-interface/wbi/img', () => ({
-    text: JSON.stringify({ code: 0, data: { img_url: 'https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png', sub_url: 'https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png' } })
+    text: JSON.stringify({
+      code: 0,
+      data: {
+        img_url: 'https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png',
+        sub_url: 'https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png'
+      }
+    })
   }));
   replies.set('https://api.bilibili.com/x/player/wbi/playurl', (rec) => {
     seenPlayurl = rec;
     return {
       text: JSON.stringify({
         code: 0,
-        data: { quality: 120, accept_quality: [120, 116, 80], timelength: 1000, dash: { video: [{ id: 120 }], audio: [{ id: 30280 }] }, support_formats: [{ quality: 120 }, { quality: 116 }] }
+        data: {
+          quality: 120,
+          accept_quality: [120, 116, 80],
+          timelength: 1000,
+          dash: { video: [{ id: 120 }], audio: [{ id: 30280 }] },
+          support_formats: [{ quality: 120 }, { quality: 116 }]
+        }
       })
     };
   });
@@ -188,7 +203,9 @@ console.log('\n[3] wbi 密钥取不到时退回原始参数（宁可画质低也
   const ctx = makeContext();
   ctx.GM_setValue('b.cookie', B_COOKIE);
   let seen = null;
-  replies.set('https://api.bilibili.com/x/web-interface/wbi/img', () => ({ text: JSON.stringify({ code: -404, message: 'nope' }) }));
+  replies.set('https://api.bilibili.com/x/web-interface/wbi/img', () => ({
+    text: JSON.stringify({ code: -404, message: 'nope' })
+  }));
   replies.set('https://api.bilibili.com/x/player/wbi/playurl', (rec) => {
     seen = rec;
     return { text: JSON.stringify({ code: 0, data: { quality: 64 } }) };
@@ -213,7 +230,12 @@ console.log('\n[4] 番剧 OGV：csrf 换成 B 的，body 也同步');
   let seen = null;
   replies.set('https://api.bilibili.com/ogv/player/playview', (rec) => {
     seen = rec;
-    return { text: JSON.stringify({ code: 0, data: { video_info: { quality: 120, durl: [{ url: 'http://cdn/x.mp4' }] } } }) };
+    return {
+      text: JSON.stringify({
+        code: 0,
+        data: { video_info: { quality: 120, durl: [{ url: 'http://cdn/x.mp4' }] } }
+      })
+    };
   });
   const api = await loadProxyModule(ctx);
   const r = await api.handleRequest({
@@ -252,7 +274,11 @@ console.log('\n[4] 番剧 OGV：csrf 换成 B 的，body 也同步');
     method: 'POST',
     body: 'ep_id=7&cid=9&csrf=a-csrf'
   });
-  check('没有 B 的 csrf 时 query 里的 A 的 csrf 被删掉', !new URL(seen2.url).searchParams.has('csrf'), seen2.url);
+  check(
+    '没有 B 的 csrf 时 query 里的 A 的 csrf 被删掉',
+    !new URL(seen2.url).searchParams.has('csrf'),
+    seen2.url
+  );
   check('没有 B 的 csrf 时 body 里的 A 的 csrf 被删掉', !/csrf=a-csrf/.test(seen2.data), seen2.data);
   check('body 其余字段保留', seen2.data.includes('ep_id=7') && seen2.data.includes('cid=9'), seen2.data);
 }
@@ -267,7 +293,10 @@ console.log('\n[4b] 番剧 OGV：新版 GET playview 也走代理');
   replies.set('https://api.bilibili.com/ogv/player/playview', (rec) => {
     seen = rec;
     return {
-      text: JSON.stringify({ code: 0, data: { play_video_type: 'whole', video_info: { quality: 127, dash: { video: [], audio: [] } } } })
+      text: JSON.stringify({
+        code: 0,
+        data: { play_video_type: 'whole', video_info: { quality: 127, dash: { video: [], audio: [] } } }
+      })
     };
   });
   const api = await loadProxyModule(ctx);
@@ -281,7 +310,10 @@ console.log('\n[4b] 番剧 OGV：新版 GET playview 也走代理');
   check('fnval 保持 4048', u.searchParams.get('fnval') === '4048', u.searchParams.get('fnval'));
   check('补上 fourk=1', u.searchParams.get('fourk') === '1', u.searchParams.get('fourk'));
   check('is_qn_trial 被删除', !u.searchParams.has('is_qn_trial'));
-  check('biz_type/scene 保留', u.searchParams.get('biz_type') === 'ogv' && u.searchParams.get('scene') === 'normal');
+  check(
+    'biz_type/scene 保留',
+    u.searchParams.get('biz_type') === 'ogv' && u.searchParams.get('scene') === 'normal'
+  );
   check('返回 OGV 响应', r.passthrough === false && JSON.parse(r.body).data.video_info.quality === 127);
 }
 
@@ -295,7 +327,10 @@ console.log('\n[5] 业务错误 → 回退，不把错误页喂给播放器');
     text: JSON.stringify({ code: -10403, message: '大会员专享' })
   }));
   const api = await loadProxyModule(ctx);
-  const r = await api.handleRequest({ url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=1&qn=32', method: 'GET' });
+  const r = await api.handleRequest({
+    url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=1&qn=32',
+    method: 'GET'
+  });
   check('回退为 passthrough', r.passthrough === true, r);
 }
 
@@ -307,7 +342,13 @@ console.log('\n[6] -403 签名被拒 → 退回原始参数再试一次');
   ctx.GM_setValue('b.cookie', B_COOKIE);
   let n = 0;
   replies.set('https://api.bilibili.com/x/web-interface/wbi/img', () => ({
-    text: JSON.stringify({ code: 0, data: { img_url: 'https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png', sub_url: 'https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png' } })
+    text: JSON.stringify({
+      code: 0,
+      data: {
+        img_url: 'https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png',
+        sub_url: 'https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png'
+      }
+    })
   }));
   replies.set('https://api.bilibili.com/x/player/wbi/playurl', () => {
     n++;
@@ -315,7 +356,10 @@ console.log('\n[6] -403 签名被拒 → 退回原始参数再试一次');
     return { text: JSON.stringify({ code: 0, data: { quality: 64 } }) };
   });
   const api = await loadProxyModule(ctx);
-  const r = await api.handleRequest({ url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=1&qn=32', method: 'GET' });
+  const r = await api.handleRequest({
+    url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=1&qn=32',
+    method: 'GET'
+  });
   const playurlCalls = calls.filter((c) => c.url.includes('/playurl'));
   check('确实重试了一次', playurlCalls.length === 2, playurlCalls.length);
   check('重试用的是未抬高参数的原始 URL', new URL(playurlCalls[1].url).searchParams.get('qn') === '32');
@@ -362,21 +406,33 @@ console.log('\n[6c] 切号后清缓存，不能把在途的旧账号响应写回
     text: JSON.stringify({ code: 0, data: { quality: 120 } })
   }));
   const api = await loadProxyModule(ctx);
-  const first = api.handleRequest({ url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=11&qn=32', method: 'GET' });
+  const first = api.handleRequest({
+    url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=11&qn=32',
+    method: 'GET'
+  });
   api.resetCache();
   await first;
   check('清缓存后不再接受旧在途结果', api.cacheStats().size === 0, api.cacheStats());
   const before = calls.length;
-  await api.handleRequest({ url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=11&qn=32', method: 'GET' });
+  await api.handleRequest({
+    url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=11&qn=32',
+    method: 'GET'
+  });
   check('同 key 会重新联网而不是命中旧缓存', calls.length > before, { before, after: calls.length });
   check('在途表最终清空', api.cacheStats().inflight === 0, api.cacheStats().inflight);
 }
 
 console.log('\n[6d] coalesce 与 cacheClear 的交互（缓存模块级，不走网络时序）');
 {
-  const { coalesce, cacheClear, cacheGeneration, cacheInfo } = await loadPlainModule(makeContext(), 'src/core/cache.js');
+  const { coalesce, cacheClear, cacheGeneration, cacheInfo } = await loadPlainModule(
+    makeContext(),
+    'src/core/cache.js'
+  );
   let resolve = null;
-  const factory = () => new Promise((r) => { resolve = r; });
+  const factory = () =>
+    new Promise((r) => {
+      resolve = r;
+    });
   // resolve 会被第二次调用覆盖，所以分别存
   const resolvers = [];
   const f = () => new Promise((r) => resolvers.push(r));
@@ -407,7 +463,10 @@ console.log('\n[6d] coalesce 与 cacheClear 的交互（缓存模块级，不走
   // 同代际下的正常去重不能被这次修复破坏
   cacheClear();
   let ran = 0;
-  const f2 = () => { ran++; return Promise.resolve('shared'); };
+  const f2 = () => {
+    ran++;
+    return Promise.resolve('shared');
+  };
   const [x, y] = await Promise.all([coalesce('S', f2), coalesce('S', f2)]);
   check('未清缓存时仍然合并', ran === 1 && x === 'shared' && y === 'shared', { ran });
 }
@@ -426,7 +485,10 @@ console.log('\n[7] 缓存：同一个 cid 连发 3 次只打一次网络');
   const rs = await Promise.all([api.handleRequest(msg), api.handleRequest(msg), api.handleRequest(msg)]);
   await api.handleRequest(msg);
   check('三次并发只发一次请求', calls.filter((c) => c.url.includes('/playurl')).length === 1, calls.length);
-  check('三次都拿到成功响应', rs.every((r) => r.passthrough === false));
+  check(
+    '三次都拿到成功响应',
+    rs.every((r) => r.passthrough === false)
+  );
 }
 
 console.log('\n[8] 发送方式失败时自动换下一种');
@@ -444,13 +506,40 @@ console.log('\n[8] 发送方式失败时自动换下一种');
         setTimeout(() => opts.onerror({ status: 0 }), 0);
         return;
       }
-      setTimeout(() => opts.onload({ status: 200, statusText: 'OK', responseText: JSON.stringify({ code: 0, data: { quality: 120 } }), responseHeaders: '' }), 0);
+      setTimeout(
+        () =>
+          opts.onload({
+            status: 200,
+            statusText: 'OK',
+            responseText: JSON.stringify({ code: 0, data: { quality: 120 } }),
+            responseHeaders: ''
+          }),
+        0
+      );
       return;
     }
-    setTimeout(() => opts.onload({ status: 200, statusText: 'OK', responseText: JSON.stringify({ code: 0, data: { img_url: 'https://x/7cd084941338484aae1ad9425b84077c.png', sub_url: 'https://x/4932caff0ff746eab6f01bf08b70ac45.png' } }), responseHeaders: '' }), 0);
+    setTimeout(
+      () =>
+        opts.onload({
+          status: 200,
+          statusText: 'OK',
+          responseText: JSON.stringify({
+            code: 0,
+            data: {
+              img_url: 'https://x/7cd084941338484aae1ad9425b84077c.png',
+              sub_url: 'https://x/4932caff0ff746eab6f01bf08b70ac45.png'
+            }
+          }),
+          responseHeaders: ''
+        }),
+      0
+    );
   };
   const api = await loadProxyModule(ctx);
-  const r = await api.handleRequest({ url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=2&qn=32', method: 'GET' });
+  const r = await api.handleRequest({
+    url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=2&qn=32',
+    method: 'GET'
+  });
   check('换方式后成功', r.passthrough === false, r);
   check('确实尝试了不止一种方式', attempts >= 2, attempts);
 }
@@ -466,7 +555,10 @@ console.log('\n[9] 会员字段补丁会作用在代理响应上');
     text: JSON.stringify({ code: 0, data: { quality: 120, vip: { status: 0, type: 0 }, vipStatus: 0 } })
   }));
   const api = await loadProxyModule(ctx);
-  const r = await api.handleRequest({ url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=3&qn=32', method: 'GET' });
+  const r = await api.handleRequest({
+    url: 'https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=3&qn=32',
+    method: 'GET'
+  });
   const d = JSON.parse(r.body).data;
   check('vip.status -> 1', d.vip.status === 1);
   check('vipStatus -> 1', d.vipStatus === 1);
@@ -475,44 +567,50 @@ console.log('\n[10] summarize 提取流信息：支持 UGC(data) 与 PGC(result)
 {
   const { summarize } = await import('../src/core/proxy.js');
   // UGC 格式
-  const ugc = summarize(JSON.stringify({
-    code: 0,
-    data: {
-      quality: 80,
-      dash: { video: [{ id: 80, codecid: 7, bandwidth: 2000000, width: 1920, height: 1080 }] },
-      support_formats: [{ quality: 80 }, { quality: 64 }]
-    }
-  }));
+  const ugc = summarize(
+    JSON.stringify({
+      code: 0,
+      data: {
+        quality: 80,
+        dash: { video: [{ id: 80, codecid: 7, bandwidth: 2000000, width: 1920, height: 1080 }] },
+        support_formats: [{ quality: 80 }, { quality: 64 }]
+      }
+    })
+  );
   check('UGC quality 提取', ugc.quality === 80, ugc.quality);
   check('UGC videoStreams 提取', ugc.videoStreams.length === 1 && ugc.videoStreams[0].width === 1920);
   check('UGC formats 提取', ugc.formats.includes(80) && ugc.formats.includes(64));
 
   // PGC / OGV 番剧格式（字段在 result.video_info）
-  const pgc = summarize(JSON.stringify({
-    code: 0,
-    result: {
-      video_info: {
-        quality: 120,
-        dash: { video: [{ id: 120, codecid: 13, bandwidth: 4500000, width: 3840, height: 2160 }] },
-        support_formats: [{ quality: 120 }, { quality: 80 }]
+  const pgc = summarize(
+    JSON.stringify({
+      code: 0,
+      result: {
+        video_info: {
+          quality: 120,
+          dash: { video: [{ id: 120, codecid: 13, bandwidth: 4500000, width: 3840, height: 2160 }] },
+          support_formats: [{ quality: 120 }, { quality: 80 }]
+        }
       }
-    }
-  }));
+    })
+  );
   check('PGC result.video_info quality 提取', pgc.quality === 120, pgc.quality);
   check('PGC videoStreams 提取', pgc.videoStreams[0].width === 3840);
   check('PGC formats 提取', pgc.formats.includes(120));
 
   // durl 回落提取（无 dash 时提取码率与 codec）
-  const durlRes = summarize(JSON.stringify({
-    code: 0,
-    result: {
-      video_info: {
-        quality: 32,
-        video_codecid: 7,
-        durl: [{ size: 50000000, length: 300000 }]
+  const durlRes = summarize(
+    JSON.stringify({
+      code: 0,
+      result: {
+        video_info: {
+          quality: 32,
+          video_codecid: 7,
+          durl: [{ size: 50000000, length: 300000 }]
+        }
       }
-    }
-  }));
+    })
+  );
   check('durl quality 提取', durlRes.quality === 32);
   check('durl codec 提取', durlRes.codec === 7);
   check('durl kbps 计算', durlRes.kbps > 1000, durlRes.kbps);
@@ -527,16 +625,34 @@ console.log('\n[11] -10403 地区/版权限制不误杀正常大会员账号');
     v: 1,
     activeId: 'vip-1',
     borrowId: '',
-    accounts: [{ id: 'vip-1', cookie: B_COOKIE, mid: '999', uname: 'VIP1', vipStatus: 1, vipType: 2, invalid: false, checkedAt: Date.now() }]
+    accounts: [
+      {
+        id: 'vip-1',
+        cookie: B_COOKIE,
+        mid: '999',
+        uname: 'VIP1',
+        vipStatus: 1,
+        vipType: 2,
+        invalid: false,
+        checkedAt: Date.now()
+      }
+    ]
   });
   replies.set('https://api.bilibili.com/ogv/player/playview', () => ({
     text: JSON.stringify({ code: -10403, message: '非常抱歉，根据版权方要求您所在的地区无法观看本片' })
   }));
   const api = await loadProxyModule(ctx);
-  const r = await api.handleRequest({ url: 'https://api.bilibili.com/ogv/player/playview?ep_id=100&cid=200', method: 'GET' });
+  const r = await api.handleRequest({
+    url: 'https://api.bilibili.com/ogv/player/playview?ep_id=100&cid=200',
+    method: 'GET'
+  });
   const savedPool = ctx.GM_getValue('b.accounts');
   check('地区限制回退 passthrough', r.passthrough === true);
-  check('正常大会员账号未被误标 invalid', savedPool.accounts[0].invalid === false && savedPool.accounts[0].vipStatus === 1, savedPool.accounts[0]);
+  check(
+    '正常大会员账号未被误标 invalid',
+    savedPool.accounts[0].invalid === false && savedPool.accounts[0].vipStatus === 1,
+    savedPool.accounts[0]
+  );
 }
 
 console.log('\n[12] 多大会员账号池自动故障切换重试');
@@ -550,21 +666,59 @@ console.log('\n[12] 多大会员账号池自动故障切换重试');
     activeId: 'plain-a',
     borrowId: '',
     accounts: [
-      { id: 'plain-a', cookie: 'SESSDATA=a-plain; bili_jct=a-csrf; DedeUserID=111', mid: '111', uname: 'A', vipStatus: 0, vipType: 0, invalid: false, checkedAt: Date.now() },
-      { id: 'vip-1', cookie: B_COOKIE, mid: '999', uname: 'VIP1', vipStatus: 1, vipType: 2, invalid: false, checkedAt: Date.now() },
-      { id: 'vip-2', cookie: B2_COOKIE, mid: '888', uname: 'VIP2', vipStatus: 1, vipType: 2, invalid: false, checkedAt: Date.now() }
+      {
+        id: 'plain-a',
+        cookie: 'SESSDATA=a-plain; bili_jct=a-csrf; DedeUserID=111',
+        mid: '111',
+        uname: 'A',
+        vipStatus: 0,
+        vipType: 0,
+        invalid: false,
+        checkedAt: Date.now()
+      },
+      {
+        id: 'vip-1',
+        cookie: B_COOKIE,
+        mid: '999',
+        uname: 'VIP1',
+        vipStatus: 1,
+        vipType: 2,
+        invalid: false,
+        checkedAt: Date.now()
+      },
+      {
+        id: 'vip-2',
+        cookie: B2_COOKIE,
+        mid: '888',
+        uname: 'VIP2',
+        vipStatus: 1,
+        vipType: 2,
+        invalid: false,
+        checkedAt: Date.now()
+      }
     ]
   });
   replies.set('https://api.bilibili.com/ogv/player/playview', (rec) => {
     if (rec.cookie.includes('b-secret')) {
       return { text: JSON.stringify({ code: -101, message: '账号未登录' }) };
     }
-    return { text: JSON.stringify({ code: 0, data: { video_info: { quality: 120, dash: { video: [], audio: [] } } } }) };
+    return {
+      text: JSON.stringify({
+        code: 0,
+        data: { video_info: { quality: 120, dash: { video: [], audio: [] } } }
+      })
+    };
   });
   const api = await loadProxyModule(ctx);
-  const r = await api.handleRequest({ url: 'https://api.bilibili.com/ogv/player/playview?ep_id=55&cid=66', method: 'GET' });
+  const r = await api.handleRequest({
+    url: 'https://api.bilibili.com/ogv/player/playview?ep_id=55&cid=66',
+    method: 'GET'
+  });
   const savedPool = ctx.GM_getValue('b.accounts');
-  check('VIP1 失效后自动切换至 VIP2 重试成功', r.passthrough === false && JSON.parse(r.body).data.video_info.quality === 120);
+  check(
+    'VIP1 失效后自动切换至 VIP2 重试成功',
+    r.passthrough === false && JSON.parse(r.body).data.video_info.quality === 120
+  );
   check('VIP1 被标记 invalid', savedPool.accounts.find((a) => a.id === 'vip-1').invalid === true);
   check('VIP2 保持正常有效', savedPool.accounts.find((a) => a.id === 'vip-2').invalid === false);
 }
@@ -590,7 +744,10 @@ console.log('\n[13] 归一化 cacheKey：prefetch 与带动态参数的真实请
     method: 'GET'
   });
   check('prefetch 预热成功', r1.passthrough === false);
-  check('真实播放器请求命中 prefetch 缓存', r2.cached === true && netHits === 1, { cached: r2.cached, netHits });
+  check('真实播放器请求命中 prefetch 缓存', r2.cached === true && netHits === 1, {
+    cached: r2.cached,
+    netHits
+  });
 }
 
 console.log('');

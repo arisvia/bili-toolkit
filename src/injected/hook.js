@@ -28,7 +28,9 @@ import { createPrefetcher } from './prefetch.js';
   let hidePlayinfo = !!CFG.hidePlayinfo;
   let canBorrow = CFG.canBorrow === undefined ? hidePlayinfo : !!CFG.canBorrow;
   let patchVip =
-    CFG.patchVip === undefined ? canBorrow && (CFG.patchUi === undefined ? true : !!CFG.patchUi) : !!CFG.patchVip;
+    CFG.patchVip === undefined
+      ? canBorrow && (CFG.patchUi === undefined ? true : !!CFG.patchUi)
+      : !!CFG.patchVip;
   let patchUi = !!CFG.patchUi;
   let doPrefetch = !!CFG.prefetch;
   let softLogout = CFG.softLogout !== false;
@@ -338,7 +340,11 @@ import { createPrefetcher } from './prefetch.js';
           return resp.clone().text();
         })
         .then((text) => {
-          emulateXhr(self2, { status: 200, statusText: 'OK', body: patchLocal(text), headersRaw: '' }, st.url);
+          emulateXhr(
+            self2,
+            { status: 200, statusText: 'OK', body: patchLocal(text), headersRaw: '' },
+            st.url
+          );
         })
         .catch(() => {
           origSend.call(self2, body);
@@ -380,7 +386,12 @@ import { createPrefetcher } from './prefetch.js';
         return resp
           .clone()
           .text()
-          .then((t) => makeResponse({ body: patchLocal(t), status: resp.status, statusText: resp.statusText, headersRaw: '' }, url));
+          .then((t) =>
+            makeResponse(
+              { body: patchLocal(t), status: resp.status, statusText: resp.statusText, headersRaw: '' },
+              url
+            )
+          );
       });
     }
 

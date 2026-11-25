@@ -53,7 +53,10 @@ export function createDockRenderer({ getRoot, getState, onToggleBorrow }) {
 
     const list = el('div', 'dock-tray-list');
     for (const r of rows) {
-      const item = el('div', 'dock-tray-item' + (r.isActive ? ' active' : '') + (!o.canWrite ? ' disabled' : ''));
+      const item = el(
+        'div',
+        'dock-tray-item' + (r.isActive ? ' active' : '') + (!o.canWrite ? ' disabled' : '')
+      );
       item.dataset.id = r.id;
       item.tabIndex = 0;
       item.setAttribute('role', 'button');

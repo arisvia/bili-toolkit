@@ -1,8 +1,9 @@
 /**
  * 构建脚本：src/ (ESM)  ->  dist/bili-toolkit.user.js (单文件 userscript)
  *
- *   node build.mjs              生产构建（压缩）
- *   node build.mjs --dev        开发构建（不压缩、带日志）
+ *   node build.mjs              生产构建（可读未压缩，兼容 Greasy Fork 审核）
+ *   node build.mjs --minify     压缩构建
+ *   node build.mjs --dev        开发构建（带调试环境标记）
  *   node build.mjs --watch      监听重建
  *   node build.mjs --check      只做静态检查，不产出文件
  */
@@ -135,7 +136,14 @@ function checkEndpoints() {
  * 这些字符串直接出现在用户面前，出现「本脚本」「我们」这类自称很出戏，
  * 而一旦写完就没人回头看，只能靠构建时卡一道。
  */
-const COPY_FILES = ['src/ui/panel.js', 'src/ui/dock.js', 'src/ui/dom.js', 'src/ui/menu.js', 'src/core/switcher.js', 'src/index.js'];
+const COPY_FILES = [
+  'src/ui/panel.js',
+  'src/ui/dock.js',
+  'src/ui/dom.js',
+  'src/ui/menu.js',
+  'src/core/switcher.js',
+  'src/index.js'
+];
 
 function checkCopy() {
   const banned = ['本脚本', '我们', '您', '旧版本', '之前那版'];
@@ -158,7 +166,7 @@ function checkCopy() {
     for (const m of code.matchAll(/'([^'\\\n]{4,})'/g)) {
       const s = m[1];
       if (!/[\u4e00-\u9fa5]/.test(s)) continue;
-      if (s.includes('${')) continue;               // 运行时拼接
+      if (s.includes('${')) continue; // 运行时拼接
       if (/^[×÷\s·—…/=｜|?+\-]+$/.test(s)) continue; // 纯符号
       if (s.length < 6) continue;
       offenders.push(s);
@@ -180,22 +188,31 @@ function runChecks() {
 }
 
 /* ------------------------------------------------------------------ *
- * esbuild 插件：先把「主世界钩子」独立打包压缩成 IIFE，再当作字符串常量注入。
- * 这样主世界钩子既能 import src/shared/* 消除双份维护，又能在生产构建中
- * 被完整压缩，显著减小最终 .user.js 体积。
+ * esbuild 插件：先把「主世界钩子」独立打包成可读 IIFE，再以多行模板字符串注入。
+ * 这样主世界钩子既能 import src/shared/* 消除双份维护，又能在最终 .user.js 中
+ * 保持清晰可读、无混淆压缩（兼容 Greasy Fork 审核并方便用户审查）。
  * ------------------------------------------------------------------ */
+const MINIFY = argv.includes('--minify');
+
+function toTemplateLiteral(str) {
+  return (
+    '`' + str.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${').replace(/\r/g, '\\r') + '`'
+  );
+}
+
 async function buildHookBundle() {
   const res = await esbuild.build({
     entryPoints: [HOOK_ENTRY],
     bundle: true,
+    treeShaking: true,
     format: 'iife',
     target: ['chrome110', 'firefox110', 'safari16'],
     charset: 'utf8',
     legalComments: 'none',
-    minify: !DEV,
+    minify: MINIFY,
     write: false
   });
-  const code = res.outputFiles[0].text;
+  const code = res.outputFiles[0].text.trim();
   const n = code.split('__BILI_VIP_CFG__').length - 1;
   if (n !== 1) fail(`打包后的主世界钩子中占位符 __BILI_VIP_CFG__ 必须出现且只出现 1 次，实际 ${n} 次`);
   return code;
@@ -207,7 +224,7 @@ const hookSourcePlugin = {
     build.onLoad({ filter: /injected[\\/]hook\.js$/ }, async () => {
       const code = await buildHookBundle();
       return {
-        contents: `export default ${JSON.stringify(code)};`,
+        contents: `export default ${MINIFY ? JSON.stringify(code) : toTemplateLiteral(code)};`,
         loader: 'js'
       };
     });
@@ -222,11 +239,12 @@ function buildOptions() {
     entryPoints: [ENTRY],
     outfile: OUTFILE,
     bundle: true,
+    treeShaking: true,
     format: 'iife',
     target: ['chrome110', 'firefox110', 'safari16'],
     charset: 'utf8', // 保留中文可读性
     legalComments: 'none',
-    minify: !DEV,
+    minify: MINIFY,
     sourcemap: false,
     write: !CHECK_ONLY,
     plugins: [hookSourcePlugin],

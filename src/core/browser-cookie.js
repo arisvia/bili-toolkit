@@ -59,48 +59,42 @@ export function canWriteCookies() {
 }
 
 /**
- * Violentmonkey 2.50.0 默认没有「允许 GM_cookie 访问 HttpOnly Cookie」权限：
- * chrome.cookies.set 之前会被 sw.js 里的守卫拦掉，而且错误不一定会回到页面脚本。
- * 有权限时 GM.cookie.list 能返回 SESSDATA；没有权限时它会把 HttpOnly Cookie 过滤掉。
+ * 归一化 GM.cookie.list / GM_cookie.list（同时兼容 Promise 与 callback 两种签名）。
+ * 返回 Cookie 数组；接口不存在或报错时返回 null。
  */
-function isViolentmonkey() {
-  try {
-    return (
-      typeof GM_info !== 'undefined' &&
-      GM_info &&
-      /violentmonkey/i.test(String(GM_info.scriptHandler || ''))
-    );
-  } catch (e) {
-    return false;
-  }
-}
-
-async function canWriteHttpOnlyCookies() {
-  if (!isViolentmonkey()) return true;
+function gmCookieList(details) {
   const api = getCookieApi();
-  if (!api || typeof api.list !== 'function') return false;
-  try {
-    const list = await api.list({ url: 'https://www.bilibili.com/', domain: COOKIE_DOMAIN });
-    return Array.isArray(list) && list.some((c) => c && c.name === 'SESSDATA' && c.httpOnly);
-  } catch (e) {
-    return false;
-  }
+  if (!api || typeof api.list !== 'function') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (cookies, err) => {
+      if (settled) return;
+      settled = true;
+      resolve(!err && Array.isArray(cookies) ? cookies : null);
+    };
+    try {
+      const p = api.list(details, done);
+      if (p && typeof p.then === 'function') {
+        p.then(
+          (res) => done(res, null),
+          (e) => done(null, e)
+        );
+      }
+    } catch (e) {
+      done(null, e);
+    }
+  });
 }
 
 async function readSessdata() {
-  const api = getCookieApi();
-  if (!api || typeof api.list !== 'function') return null;
-  try {
-    const list = await api.list({
-      url: 'https://www.bilibili.com/',
-      domain: COOKIE_DOMAIN,
-      name: 'SESSDATA'
-    });
-    const hit = Array.isArray(list) && list.find((c) => c && c.name === 'SESSDATA');
-    return hit ? hit.value : null;
-  } catch (e) {
-    return null;
-  }
+  const list = await gmCookieList({
+    url: 'https://www.bilibili.com/',
+    domain: COOKIE_DOMAIN,
+    name: 'SESSDATA'
+  });
+  if (list === null) return { supported: false, value: null };
+  const hit = list.find((c) => c && c.name === 'SESSDATA');
+  return { supported: true, value: hit ? hit.value : null };
 }
 
 /* ------------------------------------------------------------------ *
@@ -215,7 +209,6 @@ export async function applyAccount(cookieString, staleKeys = []) {
 
   const written = [];
   const errors = [];
-  const httpOnlyWritable = await canWriteHttpOnlyCookies();
 
   // 计算持久有效期：B 站官方凭证生命周期通常为 180 天。
   // 若 Cookie 写入时不带 expirationDate / Max-Age，浏览器会默认将其标记为 Session Cookie，
@@ -226,22 +219,26 @@ export async function applyAccount(cookieString, staleKeys = []) {
   const maxAge = DEFAULT_TTL_SEC;
   const expiresUtc = new Date(exp * 1000).toUTCString();
 
+  const buildCookieDetails = (key, value, httpOnly) => {
+    const details = {
+      url: 'https://www.bilibili.com/',
+      name: key,
+      value,
+      domain: COOKIE_DOMAIN,
+      path: COOKIE_PATH,
+      secure: true,
+      expirationDate: exp
+    };
+    if (httpOnly) details.httpOnly = true;
+    return details;
+  };
+
   for (const key of IDENTITY_COOKIE_KEYS) {
     const value = target[key];
     if (value === undefined) continue; // 目标账号没有这个字段，不该凭空造一个
     try {
       if (level >= 2) {
-        const details = {
-          url: 'https://www.bilibili.com/',
-          name: key,
-          value,
-          domain: COOKIE_DOMAIN,
-          path: COOKIE_PATH,
-          secure: true,
-          expirationDate: exp
-        };
-        if (HTTP_ONLY_COOKIE_KEYS.has(key) && httpOnlyWritable) details.httpOnly = true;
-        await gmCookieSet(details);
+        await gmCookieSet(buildCookieDetails(key, value, HTTP_ONLY_COOKIE_KEYS.has(key)));
       } else {
         const parts = [
           `${key}=${value}`,
@@ -252,9 +249,17 @@ export async function applyAccount(cookieString, staleKeys = []) {
           `Expires=${expiresUtc}`
         ];
         if (HTTP_ONLY_COOKIE_KEYS.has(key)) parts.push('httponly');
-        await gmSetCookie(parts.join('; '), { domain: COOKIE_DOMAIN, path: COOKIE_PATH, expirationDate: exp });
+        await gmSetCookie(parts.join('; '), {
+          domain: COOKIE_DOMAIN,
+          path: COOKIE_PATH,
+          expirationDate: exp
+        });
       }
-      if (!HTTP_ONLY_COOKIE_KEYS.has(key) && typeof document !== 'undefined' && typeof document.cookie === 'string') {
+      if (
+        !HTTP_ONLY_COOKIE_KEYS.has(key) &&
+        typeof document !== 'undefined' &&
+        typeof document.cookie === 'string'
+      ) {
         try {
           document.cookie = `${key}=${value}; path=${COOKIE_PATH}; domain=${COOKIE_DOMAIN}; max-age=${maxAge}; expires=${expiresUtc}; secure`;
         } catch (e) {}
@@ -266,11 +271,19 @@ export async function applyAccount(cookieString, staleKeys = []) {
     }
   }
 
-  // GM_cookie.set 在部分管理器里对 HttpOnly 写入是「假成功」：
-  // 返回 resolve，实际 Cookie 没变。切号必须读到写后的 SESSDATA 才能算成功。
-  if (written.includes('SESSDATA')) {
-    const actual = await readSessdata();
-    if (actual !== null && actual !== target.SESSDATA) {
+  // 部分管理器（如 Violentmonkey 未授予 HttpOnly 权限时）对 HttpOnly 写入会「假成功」：
+  // Promise 正常 resolve 但实际 Cookie 未变更。写入后读回校验，若不一致自动退回非 HttpOnly 重试一次。
+  if (level >= 2 && written.includes('SESSDATA')) {
+    let sess = await readSessdata();
+    if (sess.supported && sess.value !== target.SESSDATA) {
+      try {
+        await gmCookieSet(buildCookieDetails('SESSDATA', target.SESSDATA, false));
+        sess = await readSessdata();
+      } catch (e) {
+        errors.push('SESSDATA(fallback): ' + (e && e.message));
+      }
+    }
+    if (sess.supported && sess.value !== target.SESSDATA) {
       written.splice(written.indexOf('SESSDATA'), 1);
       errors.push('SESSDATA: 写入后读回不一致');
     }
@@ -294,7 +307,11 @@ export async function applyAccount(cookieString, staleKeys = []) {
       try {
         if (level >= 2) {
           await gmCookieDelete({ name: key, url: 'https://www.bilibili.com/' });
-          await gmCookieDelete({ name: key, domain: 'www.bilibili.com', url: 'https://www.bilibili.com/' }).catch(() => {});
+          await gmCookieDelete({
+            name: key,
+            domain: 'www.bilibili.com',
+            url: 'https://www.bilibili.com/'
+          }).catch(() => {});
         } else {
           await gmSetCookieExpired(key, COOKIE_DOMAIN, COOKIE_PATH);
         }
@@ -334,9 +351,19 @@ export async function clearBrowserIdentityCookies() {
     try {
       if (level >= 2) {
         await gmCookieDelete({ name: key, url: 'https://www.bilibili.com/' });
-        await gmCookieDelete({ name: key, domain: COOKIE_DOMAIN, url: 'https://www.bilibili.com/' }).catch(() => {});
-        await gmCookieDelete({ name: key, domain: 'www.bilibili.com', url: 'https://www.bilibili.com/' }).catch(() => {});
-        await gmCookieDelete({ name: key, domain: 'passport.bilibili.com', url: 'https://passport.bilibili.com/' }).catch(() => {});
+        await gmCookieDelete({ name: key, domain: COOKIE_DOMAIN, url: 'https://www.bilibili.com/' }).catch(
+          () => {}
+        );
+        await gmCookieDelete({
+          name: key,
+          domain: 'www.bilibili.com',
+          url: 'https://www.bilibili.com/'
+        }).catch(() => {});
+        await gmCookieDelete({
+          name: key,
+          domain: 'passport.bilibili.com',
+          url: 'https://passport.bilibili.com/'
+        }).catch(() => {});
       } else if (level === 1) {
         await gmSetCookieExpired(key, COOKIE_DOMAIN, COOKIE_PATH);
         await gmSetCookieExpired(key, 'www.bilibili.com', COOKIE_PATH).catch(() => {});

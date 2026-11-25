@@ -59,7 +59,8 @@ function state() {
   const o = overview();
   const borrowAcc = o.rows.find((r) => r.isBorrow);
   if (borrowAcc && borrowAcc.invalid) return { ok: false, dot: '#f56c6c', note: TEXT.badge.invalid };
-  if (stats.proxyFail > 0 && stats.proxyOk === 0) return { ok: false, dot: '#f56c6c', note: TEXT.badge.failing };
+  if (stats.proxyFail > 0 && stats.proxyOk === 0)
+    return { ok: false, dot: '#f56c6c', note: TEXT.badge.failing };
   return { ok: true, dot: '', note: '' };
 }
 
@@ -114,29 +115,44 @@ function buildPanel(body) {
     label: { max: '最高', uhd: '4K', hd60: '1080P60', hd: '1080P' }[k] || k,
     title: `${v.label}（qn=${v.qn}）`
   }));
-  q.appendChild(row(TEXT.quality.video, segmented(qOpts, store.getQuality(), (v) => {
-    store.setQuality(v);
-    afterChange();
-  })));
+  q.appendChild(
+    row(
+      TEXT.quality.video,
+      segmented(qOpts, store.getQuality(), (v) => {
+        store.setQuality(v);
+        afterChange();
+      })
+    )
+  );
 
   const lOpts = Object.entries(LIVE_QN_PRESETS).map(([k]) => ({
     value: k,
     label: { max: '原画', blue: '蓝光', super: '超清' }[k] || k
   }));
-  q.appendChild(row(TEXT.quality.live, segmented(lOpts, store.getLiveQn(), (v) => {
-    store.setLiveQn(v);
-    afterChange();
-  })));
+  q.appendChild(
+    row(
+      TEXT.quality.live,
+      segmented(lOpts, store.getLiveQn(), (v) => {
+        store.setLiveQn(v);
+        afterChange();
+      })
+    )
+  );
 
   const cOpts = Object.entries(TEXT.codec.presets).map(([k, label]) => ({
     value: k,
     label,
     title: TEXT.codec.titles[k] || label
   }));
-  q.appendChild(row(TEXT.codec.label, segmented(cOpts, store.getCodec(), (v) => {
-    store.setCodec(v);
-    afterChange();
-  })));
+  q.appendChild(
+    row(
+      TEXT.codec.label,
+      segmented(cOpts, store.getCodec(), (v) => {
+        store.setCodec(v);
+        afterChange();
+      })
+    )
+  );
 
   q.appendChild(el('div', 'hint', TEXT.quality.brief));
   q.appendChild(details(TEXT.quality.title + '怎么用', TEXT.quality.detail));
@@ -146,11 +162,16 @@ function buildPanel(body) {
   /* --- 区域 --- */
   const reg = section(TEXT.region.title);
   const rOpts = Object.entries(REGION_MODES).map(([k, v]) => ({ value: k, label: v.label, title: v.hint }));
-  reg.appendChild(row(TEXT.region.label, segmented(rOpts, store.getRegion(), (v) => {
-    store.setRegion(v);
-    afterChange();
-    regHint.textContent = TEXT.region.brief[v];
-  })));
+  reg.appendChild(
+    row(
+      TEXT.region.label,
+      segmented(rOpts, store.getRegion(), (v) => {
+        store.setRegion(v);
+        afterChange();
+        regHint.textContent = TEXT.region.brief[v];
+      })
+    )
+  );
   const regHint = el('div', 'hint', TEXT.region.brief[store.getRegion()]);
   reg.appendChild(regHint);
   reg.appendChild(details(TEXT.region.detailTitle, TEXT.region.detail));
@@ -159,9 +180,32 @@ function buildPanel(body) {
   /* --- 其它开关 --- */
   const misc = section();
   const onOffSeg = (v, set) =>
-    segmented([{ value: true, label: TEXT.switches.on }, { value: false, label: TEXT.switches.off }], v, set);
-  misc.appendChild(row(TEXT.switches.ui, onOffSeg(store.isPatchUi(), (v) => { store.setPatchUi(v); afterChange(); })));
-  misc.appendChild(row(TEXT.switches.prefetch, onOffSeg(store.isPrefetch(), (v) => { store.setPrefetch(v); afterChange(); })));
+    segmented(
+      [
+        { value: true, label: TEXT.switches.on },
+        { value: false, label: TEXT.switches.off }
+      ],
+      v,
+      set
+    );
+  misc.appendChild(
+    row(
+      TEXT.switches.ui,
+      onOffSeg(store.isPatchUi(), (v) => {
+        store.setPatchUi(v);
+        afterChange();
+      })
+    )
+  );
+  misc.appendChild(
+    row(
+      TEXT.switches.prefetch,
+      onOffSeg(store.isPrefetch(), (v) => {
+        store.setPrefetch(v);
+        afterChange();
+      })
+    )
+  );
   misc.appendChild(
     row(
       TEXT.switches.preferCdn,
@@ -172,8 +216,24 @@ function buildPanel(body) {
       TEXT.switches.preferCdnTip
     )
   );
-  misc.appendChild(row(TEXT.switches.softLogout, onOffSeg(store.isSoftLogout(), (v) => { store.setSoftLogout(v); afterChange(); })));
-  misc.appendChild(row(TEXT.switches.debug, onOffSeg(isDebug(), (v) => { store.setDebug(v); setDebug(v); })));
+  misc.appendChild(
+    row(
+      TEXT.switches.softLogout,
+      onOffSeg(store.isSoftLogout(), (v) => {
+        store.setSoftLogout(v);
+        afterChange();
+      })
+    )
+  );
+  misc.appendChild(
+    row(
+      TEXT.switches.debug,
+      onOffSeg(isDebug(), (v) => {
+        store.setDebug(v);
+        setDebug(v);
+      })
+    )
+  );
   body.appendChild(misc);
 
   /* --- 添加账号 ---
@@ -266,7 +326,10 @@ function buildPanel(body) {
       recheckAllBtn.disabled = false;
       renderPool();
       dock.renderDot();
-      say(`${TEXT.pool.states.recheckAllDone}${res.okCount}/${res.total}`, res.failCount ? '#e6a23c' : '#00a396');
+      say(
+        `${TEXT.pool.states.recheckAllDone}${res.okCount}/${res.total}`,
+        res.failCount ? '#e6a23c' : '#00a396'
+      );
     },
     { title: TEXT.pool.states.recheckAllTip }
   );
@@ -296,10 +359,12 @@ function buildPanel(body) {
     // 浏览器身份是异步拿的，而重绘可以被展开/切号/改借用源连续触发 ——
     // 不加序号的话，先发的请求可能后到，把过期的结果画进当前列表。
     const token = ++renderSeq;
-    overviewAsync().then((full) => {
-      if (token !== renderSeq) return; // 已经有更新的渲染了，丢弃本次回包
-      renderBrowserWho(full);
-    }).catch(() => {});
+    overviewAsync()
+      .then((full) => {
+        if (token !== renderSeq) return; // 已经有更新的渲染了，丢弃本次回包
+        renderBrowserWho(full);
+      })
+      .catch(() => {});
 
     if (!o.rows.length) {
       poolList.appendChild(el('div', 'hint', TEXT.pool.emptyHint));
@@ -310,13 +375,15 @@ function buildPanel(body) {
     // 否则用户会以为「我不是大会员所以没生效」
     if (o.borrowedFromOther) {
       const donor = o.rows.find((r) => r.id === o.borrowId);
-      const name = donor ? donor.label || donor.uname || ('mid ' + donor.mid) : '';
+      const name = donor ? donor.label || donor.uname || 'mid ' + donor.mid : '';
       const tip = el('div', 'hint', '✨ ' + TEXT.pool.borrowOther + name);
-      tip.style.cssText = 'padding:6px 9px;border-radius:8px;background:rgba(0,163,150,.12);color:#00a396;font-weight:600;margin-bottom:4px';
+      tip.style.cssText =
+        'padding:6px 9px;border-radius:8px;background:rgba(0,163,150,.12);color:#00a396;font-weight:600;margin-bottom:4px';
       poolList.appendChild(tip);
     } else if (o.borrowMode === 'manual') {
       const tip = el('div', 'hint', '📌 ' + TEXT.pool.manualBorrow);
-      tip.style.cssText = 'padding:6px 9px;border-radius:8px;background:rgba(230,162,60,.12);color:#e6a23c;font-weight:600;margin-bottom:4px';
+      tip.style.cssText =
+        'padding:6px 9px;border-radius:8px;background:rgba(230,162,60,.12);color:#e6a23c;font-weight:600;margin-bottom:4px';
       poolList.appendChild(tip);
     }
 
@@ -405,7 +472,11 @@ function buildPanel(body) {
     // 若当前号不在池中，按探测结果提示导入；若已在池中，卡片本身已有完整信息，绝不重复显示
     if (!full.inPool) {
       if (full.canAutoImport) {
-        const tip = el('div', 'hint', TEXT.pool.autoImportTip + (full.browserUname || 'mid=' + full.browserMid));
+        const tip = el(
+          'div',
+          'hint',
+          TEXT.pool.autoImportTip + (full.browserUname || 'mid=' + full.browserMid)
+        );
         tip.style.color = '#00a396';
         poolList.appendChild(tip);
         poolMismatchNodes.push(tip);
@@ -448,8 +519,9 @@ function buildPanel(body) {
       head.appendChild(el('div', 'avatar avatar-initial', init));
     }
 
-    const name = el('span', '', r.label || r.uname || ('mid ' + (r.mid || '?')));
-    name.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:600';
+    const name = el('span', '', r.label || r.uname || 'mid ' + (r.mid || '?'));
+    name.style.cssText =
+      'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:600';
     head.appendChild(name);
     const tags = el('div');
     tags.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0';
@@ -469,15 +541,26 @@ function buildPanel(body) {
       t.title = TEXT.pool.states.staleTip;
       tags.appendChild(t);
     }
-    const vip = el('span', 'tag ' + (r.vip ? 'vip' : r.invalid ? 'muted' : r.checkedAt ? 'plain' : 'muted'),
-      r.vip ? TEXT.pool.labels.vip : r.invalid ? TEXT.pool.labels.plain : r.checkedAt ? TEXT.pool.labels.plain : TEXT.pool.labels.unknown);
+    const vip = el(
+      'span',
+      'tag ' + (r.vip ? 'vip' : r.invalid ? 'muted' : r.checkedAt ? 'plain' : 'muted'),
+      r.vip
+        ? TEXT.pool.labels.vip
+        : r.invalid
+          ? TEXT.pool.labels.plain
+          : r.checkedAt
+            ? TEXT.pool.labels.plain
+            : TEXT.pool.labels.unknown
+    );
     tags.appendChild(vip);
     head.appendChild(tags);
     card.appendChild(head);
 
     const meta = el('div');
     meta.style.cssText = 'font-size:10.5px;opacity:.5;margin-top:2px';
-    meta.textContent = [r.uname && r.label ? r.uname : '', r.mid ? 'mid=' + r.mid : ''].filter(Boolean).join(' · ');
+    meta.textContent = [r.uname && r.label ? r.uname : '', r.mid ? 'mid=' + r.mid : '']
+      .filter(Boolean)
+      .join(' · ');
     card.appendChild(meta);
     const acts = el('div');
     acts.style.cssText = 'display:flex;gap:4px;margin-top:7px;flex-wrap:wrap;align-items:center';
@@ -507,7 +590,9 @@ function buildPanel(body) {
 
     const mgmt = el('div');
     mgmt.style.cssText = 'display:flex;gap:4px;margin-left:auto';
-    mgmt.appendChild(mkBtn(TEXT.pool.actions.recheck, () => doRecheck(r.id), { title: TEXT.pool.states.recheckTip }));
+    mgmt.appendChild(
+      mkBtn(TEXT.pool.actions.recheck, () => doRecheck(r.id), { title: TEXT.pool.states.recheckTip })
+    );
     mgmt.appendChild(mkBtn(TEXT.pool.actions.rename, () => doRename(r.id)));
     mgmt.appendChild(mkBtn(TEXT.pool.actions.remove, () => doForget(r.id)));
     acts.appendChild(mgmt);
@@ -525,7 +610,10 @@ function buildPanel(body) {
     renderPool();
     if (r.ok) {
       say(
-        '✅ ' + (r.account.uname || '?') + ' · ' + (r.account.vipStatus === 1 ? TEXT.pool.labels.vip : TEXT.pool.labels.plain),
+        '✅ ' +
+          (r.account.uname || '?') +
+          ' · ' +
+          (r.account.vipStatus === 1 ? TEXT.pool.labels.vip : TEXT.pool.labels.plain),
         r.account.vipStatus === 1 ? '#00a396' : '#e6a23c'
       );
     } else say('❌ ' + r.reason, '#f56c6c');
@@ -574,10 +662,16 @@ function buildPanel(body) {
     const warn = r.reason ? ' · ⚠ ' + TEXT.pool.states.switchPartial : '';
     if (r.needReload) {
       // 首屏 SSR 里嵌着旧身份，不刷新的话界面还是旧号，且会先播一次低画质
-    say(TEXT.pool.states.switched + (r.stale.length ? ' · ' + TEXT.pool.states.switchDeleted : '') + warn, '#00a396');
+      say(
+        TEXT.pool.states.switched + (r.stale.length ? ' · ' + TEXT.pool.states.switchDeleted : '') + warn,
+        '#00a396'
+      );
       setTimeout(() => location.reload(), 1200);
     } else {
-      say((r.reason ? '⚠ ' + r.reason : TEXT.pool.states.switchSelf) + warn, r.reason ? '#e6a23c' : 'var(--fg)');
+      say(
+        (r.reason ? '⚠ ' + r.reason : TEXT.pool.states.switchSelf) + warn,
+        r.reason ? '#e6a23c' : 'var(--fg)'
+      );
     }
   };
 
@@ -621,7 +715,8 @@ function buildPanel(body) {
         updateTaFromChoice();
       });
       const name = el('span', '', k);
-      name.style.cssText = 'font-family:var(--mono);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis';
+      name.style.cssText =
+        'font-family:var(--mono);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis';
       if (!chosen.has(k)) name.style.opacity = '.4';
       const badge = el('span', 'tag ' + (TAG_KIND[t.tier] || 'plain'), t.label);
       lab.append(cb, name, badge);
@@ -640,7 +735,11 @@ function buildPanel(body) {
   function doParse() {
     updateTaAction();
     const text = ta.value.trim();
-    if (!text) { parsedFields = null; parseBox.style.display = 'none'; return; }
+    if (!text) {
+      parsedFields = null;
+      parseBox.style.display = 'none';
+      return;
+    }
     const { fields, format } = parseCookieText(text);
     const n = Object.keys(fields).length;
     if (!n) {
@@ -653,8 +752,8 @@ function buildPanel(body) {
     parsedFields = fields;
     chosen = new Set(pickFields(fields, 'essential'));
     parseBox.style.display = '';
-    fmtLine.textContent = TEXT.account.parsed(format, n) +
-      (fields.SESSDATA ? '' : ' · ⚠ ' + TEXT.account.missing);
+    fmtLine.textContent =
+      TEXT.account.parsed(format, n) + (fields.SESSDATA ? '' : ' · ⚠ ' + TEXT.account.missing);
     presetRow.textContent = '';
     for (const p of [
       { v: 'essential', label: TEXT.account.presets.essential },
@@ -689,7 +788,12 @@ function buildPanel(body) {
     clearTimeout(ta._t);
     ta._t = setTimeout(doParse, 260);
   });
-  ta.addEventListener('paste', () => setTimeout(() => { updateTaAction(); doParse(); }, 0));
+  ta.addEventListener('paste', () =>
+    setTimeout(() => {
+      updateTaAction();
+      doParse();
+    }, 0)
+  );
 
   taAction.addEventListener('click', async () => {
     if (ta.value.trim()) {
@@ -721,7 +825,10 @@ function buildPanel(body) {
     const r = save ? await saveAccount(cookie) : await testAccount(cookie);
     saveBtn.disabled = testBtn.disabled = false;
 
-    if (r.reason === 'empty') { msg(TEXT.account.states.empty, '#f56c6c'); return; }
+    if (r.reason === 'empty') {
+      msg(TEXT.account.states.empty, '#f56c6c');
+      return;
+    }
     if (r.reason === 'incomplete') {
       msg('❌ ' + ((r.problems && r.problems.join('；')) || TEXT.account.states.noSessdata), '#f56c6c');
       return;
@@ -729,11 +836,26 @@ function buildPanel(body) {
     if (r.ok) {
       const vip = r.account.vipStatus === 1 ? TEXT.pool.labels.vip : TEXT.pool.labels.plain;
       msg(
-        '✅ ' + (r.account.uname || '?') + '（mid=' + r.account.mid + '）\n' +
-          '会员：' + vip + '\n' +
-          strategyLabel(r.strategy) + '\n' +
-          '本机账号：' + ((r.aAccount && r.aAccount.uname) || '未登录') + '\n' +
-          (save ? (r.isNew ? (!overview().browserMid ? TEXT.account.states.savedNotLoggedIn : TEXT.account.states.savedNote) : TEXT.account.states.savedTwice) : ''),
+        '✅ ' +
+          (r.account.uname || '?') +
+          '（mid=' +
+          r.account.mid +
+          '）\n' +
+          '会员：' +
+          vip +
+          '\n' +
+          strategyLabel(r.strategy) +
+          '\n' +
+          '本机账号：' +
+          ((r.aAccount && r.aAccount.uname) || '未登录') +
+          '\n' +
+          (save
+            ? r.isNew
+              ? !overview().browserMid
+                ? TEXT.account.states.savedNotLoggedIn
+                : TEXT.account.states.savedNote
+              : TEXT.account.states.savedTwice
+            : ''),
         r.account.vipStatus === 1 ? '#00a396' : '#e6a23c'
       );
       if (save) {
@@ -758,7 +880,9 @@ function buildPanel(body) {
     card.scrollIntoView({ block: 'nearest' });
     card.style.transition = 'box-shadow .2s';
     card.style.boxShadow = '0 0 0 2px var(--ring)';
-    setTimeout(() => { card.style.boxShadow = ''; }, 1400);
+    setTimeout(() => {
+      card.style.boxShadow = '';
+    }, 1400);
   }
 
   saveBtn.addEventListener('click', () => runProbe(ta.value, true));
@@ -834,7 +958,12 @@ function buildPanel(body) {
         renderPool();
         if (saved.ok) {
           highlightNew(saved.id);
-          say('✅ ' + TEXT.qr.successToast + (saved.account ? ' (' + (saved.account.uname || saved.account.mid) + ')' : ''), '#00a396');
+          say(
+            '✅ ' +
+              TEXT.qr.successToast +
+              (saved.account ? ' (' + (saved.account.uname || saved.account.mid) + ')' : ''),
+            '#00a396'
+          );
           if (saved.switch && saved.switch.needReload) {
             setTimeout(() => location.reload(), 1200);
           }
@@ -920,18 +1049,29 @@ function buildPanel(body) {
   const db = el('div', 'btns');
   db.append(
     mkBtn(TEXT.diag.actions.copyLog, async () => {
-      try { await navigator.clipboard.writeText(exportLog()); say(TEXT.account.states.copiedLog, '#00a396'); }
-      catch { say(TEXT.account.states.copyFailed, '#f56c6c'); }
+      try {
+        await navigator.clipboard.writeText(exportLog());
+        say(TEXT.account.states.copiedLog, '#00a396');
+      } catch {
+        say(TEXT.account.states.copyFailed, '#f56c6c');
+      }
     }),
-    mkBtn(TEXT.diag.actions.clearCache, () => { resetCache(); renderLive(); }),
-    mkBtn(TEXT.diag.actions.reprobe, async () => {
-      say(TEXT.diag.retrying, 'var(--fg)');
-      store.setStrategy(-1);
-      const r = await reprobe();
-      invalidateAfterSettingsChange();
-      renderPool();
-      say(r.ok ? '✅ ' + strategyLabel(r.strategy) : '❌ ' + r.reason, r.ok ? '#00a396' : '#f56c6c');
-    }, { title: TEXT.diag.reprobeTip })
+    mkBtn(TEXT.diag.actions.clearCache, () => {
+      resetCache();
+      renderLive();
+    }),
+    mkBtn(
+      TEXT.diag.actions.reprobe,
+      async () => {
+        say(TEXT.diag.retrying, 'var(--fg)');
+        store.setStrategy(-1);
+        const r = await reprobe();
+        invalidateAfterSettingsChange();
+        renderPool();
+        say(r.ok ? '✅ ' + strategyLabel(r.strategy) : '❌ ' + r.reason, r.ok ? '#00a396' : '#f56c6c');
+      },
+      { title: TEXT.diag.reprobeTip }
+    )
   );
   diag.appendChild(db);
   if (cookieProblem() || stats.lastError) {
@@ -1013,7 +1153,9 @@ function renderDiag() {
   const v2 = el('span', 'v', txt);
   if (warn) v2.style.color = '#e6a23c';
   s2.appendChild(v2);
-  s2.title = sc ? TEXT.diag.selfCheckTip + TEXT.diag.selfHookForward.replace('{n}', sc.intercepted) : TEXT.diag.selfCheckTip;
+  s2.title = sc
+    ? TEXT.diag.selfCheckTip + TEXT.diag.selfHookForward.replace('{n}', sc.intercepted)
+    : TEXT.diag.selfCheckTip;
   box.appendChild(s2);
 }
 
@@ -1027,7 +1169,11 @@ function toggle(force) {
     if (rerenderPool) rerenderPool();
     renderLive();
     renderDiag();
-    if (!tickTimer) tickTimer = setInterval(() => { renderLive(); renderDiag(); }, 1000);
+    if (!tickTimer)
+      tickTimer = setInterval(() => {
+        renderLive();
+        renderDiag();
+      }, 1000);
   } else if (tickTimer) {
     clearInterval(tickTimer);
     tickTimer = null;
@@ -1042,7 +1188,10 @@ function isEditableTarget(elNode) {
 }
 
 export function mountPanel() {
-  if (root && root.isConnected) { dock.renderDot(); return; }
+  if (root && root.isConnected) {
+    dock.renderDot();
+    return;
+  }
   ensureStyle(ID);
   root = document.createElement('div');
   root.id = ID;
@@ -1068,7 +1217,10 @@ export function mountPanel() {
   const dot = root.querySelector('.dot');
   dot.addEventListener('click', () => toggle());
   dot.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggle();
+    }
   });
   const wrap = root.querySelector('.dock-wrap');
   if (wrap) {
@@ -1081,13 +1233,22 @@ export function mountPanel() {
       toggle(false);
       return;
     }
-    if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && String(e.key || '').toLowerCase() === 'b' && !isEditableTarget(e.target)) {
+    if (
+      e.altKey &&
+      e.shiftKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      String(e.key || '').toLowerCase() === 'b' &&
+      !isEditableTarget(e.target)
+    ) {
       e.preventDefault();
       toggle();
     }
   });
   document.addEventListener('DOMContentLoaded', () => dock.renderDot());
-  overviewAsync().then(() => dock.renderDot()).catch(() => {});
+  overviewAsync()
+    .then(() => dock.renderDot())
+    .catch(() => {});
   dock.renderDot();
   setInterval(() => dock.renderDot(), 2000);
 }

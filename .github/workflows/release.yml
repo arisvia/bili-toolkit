@@ -24,7 +24,7 @@ jobs:
         run: npm ci
 
       - name: 单元测试与规范校验
-        run: npm run check && npm test && npm run check:contrast
+        run: npm run format:check && npm run check && npm test && npm run check:contrast
 
       - name: 产物构建与归档打包
         run: npm run release

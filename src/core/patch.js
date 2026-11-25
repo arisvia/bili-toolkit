@@ -174,7 +174,11 @@ function reorderStreamUrls(item) {
     .sort((a, b) => (a.score !== b.score ? a.score - b.score : a.idx - b.idx))
     .map((x) => x.u);
 
-  if (ranked[0] === item[baseKey] && ranked.length - 1 === backups.length && ranked.slice(1).every((u, i) => u === backups[i])) {
+  if (
+    ranked[0] === item[baseKey] &&
+    ranked.length - 1 === backups.length &&
+    ranked.slice(1).every((u, i) => u === backups[i])
+  ) {
     return false;
   }
 

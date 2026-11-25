@@ -34,8 +34,7 @@ function bumpVersion() {
   const cur = currentVersion();
   const [maj, min, pat] = cur.split('.').map(Number);
   const kind = argv.includes('--minor') ? 'minor' : 'patch';
-  const next =
-    kind === 'minor' ? `${maj}.${min + 1}.0` : `${maj}.${min}.${pat + 1}`;
+  const next = kind === 'minor' ? `${maj}.${min + 1}.0` : `${maj}.${min}.${pat + 1}`;
   write('src/meta.js', read('src/meta.js').replace(/VERSION = '[^']+'/, `VERSION = '${next}'`));
   const pkg = JSON.parse(read('package.json'));
   pkg.version = next;
@@ -66,7 +65,7 @@ function verifyArtifact() {
     ['钩子已内联（占位符保留待运行时替换）', code.includes('__BILI_VIP_CFG__')],
     ['没有 console.log 泄漏调试', !/console\.log\(/.test(code)],
     ['没有把调试开关写死为 true', !/setDebug\(true\)/.test(code)],
-    ['体积合理 (<200KB)', code.length < 200 * 1024]
+    ['体积合理 (<350KB)', code.length < 350 * 1024]
   ];
   for (const [name, ok] of checks) {
     console.log(`  ${ok ? '\x1b[32m✔\x1b[0m' : '\x1b[31m✖\x1b[0m'} ${name}`);

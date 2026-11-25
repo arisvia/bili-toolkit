@@ -178,7 +178,8 @@ export function resolveBorrow() {
   if (donor) return { account: donor, mode: 'auto', reason: TEXT.pool.borrowFromMember };
 
   const known = p.accounts.filter((a) => a.checkedAt > 0);
-  if (known.length === p.accounts.length) return { account: active, mode: 'self', reason: TEXT.pool.borrowNoMember };
+  if (known.length === p.accounts.length)
+    return { account: active, mode: 'self', reason: TEXT.pool.borrowNoMember };
   return { account: active, mode: 'self', reason: TEXT.pool.borrowUnprobed };
 }
 
@@ -211,7 +212,8 @@ export function addAccount(cookieInput, meta = {}) {
   const p = pool();
   const id = fingerprintId(cookie);
   const mid = String(meta.mid || parsed.DedeUserID || '');
-  const existing = p.accounts.find((a) => a.id === id) || (mid ? p.accounts.find((a) => a.mid && a.mid === mid) : null);
+  const existing =
+    p.accounts.find((a) => a.id === id) || (mid ? p.accounts.find((a) => a.mid && a.mid === mid) : null);
   // Cookie 变了就是换了凭证 —— 旧的探测结论（会员状态、昵称）全部作废。
   // 只清 checkedAt 而留着 vipStatus 会出现这种假象：
   // 用户粘了一份已失效的 Cookie 进来、探测失败，面板却继续显示「大会员」。

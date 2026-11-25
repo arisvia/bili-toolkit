@@ -15,10 +15,8 @@ export function createNanoController(getState) {
   let nanoVal = window.nano;
 
   /**
-   * 会员收银台/提示条在首屏 SSR 阶段就可能被页面自己渲染出来，
-   * 等 JS 观察器跑起来再删会有明显闪烁，极端情况下收银台 iframe
-   * 甚至会在删除后重新创建。这里在配置就绪后先钉一条 CSS，
-   * 保证会员弹窗不会显示。
+   * 收银台与会员拦截弹窗可能在首屏 SSR 阶段即已渲染，提前注入样式避免闪烁；
+   * 仅针对明确的付费弹窗/收银台容器，PromptBar 交由 removeVipPromptBar 按文案精准过滤。
    */
   function ensureVipCss() {
     const st = getState();
@@ -31,42 +29,27 @@ export function createNanoController(getState) {
       style.id = 'bili-vip-hide';
       style.textContent =
         '#BilibiliVipDialog,#pc-cashier-wrapper-video,#pc-cashier-wrapper-wide,#pc-cashier-wrapper-normal,' +
-        '[class*="paywallView_container"],[data-testid="paywall-title"],' +
-        '[class*="PromptBar_container"],[data-testid="prompt-bar-title"],[class*="PromptBar_remindInfoWrap"]' +
+        '[class*="paywallView_container"],[data-testid="paywall-title"]' +
         '{display:none !important;visibility:hidden !important;}';
       root.appendChild(style);
     } catch (e) {}
   }
 
-  /**
-   * 钩子晚于页面内联脚本时，window.player 已经带着 A 的 SSR 试看数据建好了。
-   * 仅接管 player 不一定能让它重新取流：先记一个一次性标记，自动刷新一次，
-   * 让下一份文档从 document-start 开始就由钩子接管。标记按路径存，刷新后不再触发。
-   */
-  function latePlayerReload() {
-    let key;
+  function removeVipCss() {
+    if (typeof document === 'undefined') return;
     try {
-      key = 'bili-vip:late-reload:' + location.pathname + location.search;
-      if (!playerVal) {
-        sessionStorage.removeItem(key);
-        return;
-      }
-      if (!getState().hidePlayinfo || !/^\/(bangumi\/play|video)\//.test(location.pathname)) return;
-      if (sessionStorage.getItem(key)) return;
-      sessionStorage.setItem(key, '1');
-    } catch (e) {
-      return;
-    }
-    setTimeout(function () {
-      try {
-        location.reload();
-      } catch (e) {}
-    }, 300);
+      const style = document.getElementById('bili-vip-hide');
+      if (style) style.remove();
+    } catch (e) {}
   }
 
   function isBangumiPage() {
     try {
-      return typeof location !== 'undefined' && typeof location.pathname === 'string' && location.pathname.indexOf('/bangumi/play/') === 0;
+      return (
+        typeof location !== 'undefined' &&
+        typeof location.pathname === 'string' &&
+        location.pathname.indexOf('/bangumi/play/') === 0
+      );
     } catch (e) {
       return false;
     }
@@ -101,7 +84,9 @@ export function createNanoController(getState) {
       }
       const dialog = document.getElementById('BilibiliVipDialog');
       if (dialog) dialog.remove();
-      const paywalls = document.querySelectorAll('[class*="paywallView_container"], [data-testid="paywall-title"]');
+      const paywalls = document.querySelectorAll(
+        '[class*="paywallView_container"], [data-testid="paywall-title"]'
+      );
       for (let j = paywalls.length - 1; j >= 0; j--) {
         const payHost = paywalls[j].closest ? paywalls[j].closest('[class*="paywallView_container"]') : null;
         (payHost || paywalls[j]).remove();
@@ -126,7 +111,13 @@ export function createNanoController(getState) {
 
   function watchVipPrompt() {
     const st = getState();
-    if (!st.patchVip || promptObserver || typeof MutationObserver === 'undefined' || typeof document === 'undefined') return;
+    if (
+      !st.patchVip ||
+      promptObserver ||
+      typeof MutationObserver === 'undefined' ||
+      typeof document === 'undefined'
+    )
+      return;
     const root = document.documentElement || document.body;
     if (!root) {
       if (!promptRetryTimer) {
@@ -291,7 +282,8 @@ export function createNanoController(getState) {
             }
           } catch (e) {}
 
-          const v = player.mediaElement || (typeof document !== 'undefined' ? document.querySelector('video') : null);
+          const v =
+            player.mediaElement || (typeof document !== 'undefined' ? document.querySelector('video') : null);
           const isBlob = v && v.currentSrc && v.currentSrc.indexOf('blob:') === 0;
 
           if (v && v.paused) {
@@ -370,7 +362,6 @@ export function createNanoController(getState) {
       });
     } catch (e) {}
     ensureVipCss();
-    latePlayerReload();
   }
 
   function onConfigChange() {
@@ -379,6 +370,7 @@ export function createNanoController(getState) {
       ensureVipCss();
       if (isBangumiPage() || nanoVal) watchVipPrompt();
     } else {
+      removeVipCss();
       disconnectVipPrompt();
     }
     if (st.canBorrow) {
