@@ -53,6 +53,7 @@ export const meta = `// ==UserScript==
 // @grant        GM_notification
 // @grant        GM_cookie
 // @grant        GM.cookie
+// @grant        unsafeWindow
 // @connect      api.bilibili.com
 // @connect      api.live.bilibili.com
 // @connect      passport.bilibili.com

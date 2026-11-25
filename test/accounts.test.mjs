@@ -324,6 +324,28 @@ console.log('\n[10] 切换登录态：SESSDATA / bili_jct / sid 一起换');
   check('新号有值时不会被误删', ctx.__browserCookies.get('bili_jct').value === 'c-csrf');
 }
 
+console.log('\n[10b] Violentmonkey 无 HttpOnly 权限时退回非 HttpOnly 写 SESSDATA');
+{
+  const ctx = makeContext(
+    seedPool([acc('idA', A_COOKIE, { mid: '111', uname: 'A', vipStatus: 0 })], { activeId: 'idA' })
+  );
+  ctx.GM_info = { scriptHandler: 'Violentmonkey', version: '2.50.0' };
+  // 模拟 VM 未授予 httpOnly 权限：list 会把 HttpOnly Cookie 过滤掉
+  ctx.GM.cookie.list = async () =>
+    [...ctx.__browserCookies]
+      .filter(([, v]) => !v.httpOnly)
+      .map(([name, v]) => ({ name, value: v.value, domain: v.domain, httpOnly: false }));
+
+  const accApi = await load('src/core/accounts.js', ctx);
+  const added = accApi.addAccount(B_COOKIE, { mid: '222', uname: 'B', vipStatus: 1 });
+  const sw = await load('src/core/switcher.js', ctx);
+  const r = await sw.switchLoginTo(added.id);
+
+  check('切换成功', r.ok === true, r.reason);
+  check('SESSDATA 已换成 B', ctx.__browserCookies.get('SESSDATA').value === 'b-sess');
+  check('VM 无权限时 SESSDATA 以非 HttpOnly 写入', ctx.__browserCookies.get('SESSDATA').httpOnly === false);
+}
+
 console.log('\n[11] 设备字段不会被切号误删（回归：曾把设备字段写进白名单）');
 {
   // 场景：浏览器里已有设备字段（属于这台设备），账号池里存的是最小字段集。

@@ -14,6 +14,51 @@ import { sanitizeCookie } from './cookie.js';
 
 const QR_GEN_URL = 'https://passport.bilibili.com/x/passport-login/web/qrcode/generate';
 const QR_POLL_URL = 'https://passport.bilibili.com/x/passport-login/web/qrcode/poll';
+const QR_SOURCE = 'main_web';
+const QR_SDK_URL = 'https://s1.hdslb.com/bfs/seed/jinkela/short/minntaki-wasm-sdk/bili-sc-sdk.umd.js';
+
+let qrRiskTokenPromise = null;
+
+/**
+ * 读取页面环境里的风控 token（b_ret）。
+ *
+ * 2025 版 passport 扫码流程由 bili-sc-sdk 生成 b_ret 并随 generate/poll 一起提交；
+ * 缺少它时服务端会在手机确认后把 qrcode_key 判成 86038（已失效），
+ * 表现就是「扫完二维码马上过期，账号加不进来」。
+ */
+async function getQrRiskToken() {
+  if (qrRiskTokenPromise) return qrRiskTokenPromise;
+  qrRiskTokenPromise = (async () => {
+    try {
+      const pageWindow = typeof unsafeWindow !== 'undefined' && unsafeWindow ? unsafeWindow : window;
+      if (!pageWindow.SecureCollectSDK) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = QR_SDK_URL;
+          s.async = true;
+          s.onload = resolve;
+          s.onerror = () => reject(new Error('安全组件加载失败'));
+          (document.head || document.documentElement).appendChild(s);
+        });
+      }
+      const sdk = pageWindow.SecureCollectSDK;
+      if (!sdk || typeof sdk.getEnvToken !== 'function') return '';
+      const token = await sdk.getEnvToken();
+      return token ? String(token) : '';
+    } catch {
+      return '';
+    }
+  })();
+  return qrRiskTokenPromise;
+}
+
+function qrQuery(params) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') q.set(k, String(v));
+  }
+  return q.toString();
+}
 
 /**
  * 获取新二维码及其 SVG 矢量图。
@@ -23,7 +68,7 @@ export async function fetchQrCode() {
   try {
     const res = await httpRequest({
       method: 'GET',
-      url: QR_GEN_URL,
+      url: `${QR_GEN_URL}?${qrQuery({ source: QR_SOURCE, go_url: '' })}`,
       headers: { Referer: 'https://www.bilibili.com/' },
       anonymous: true,
       timeout: 10000
@@ -90,9 +135,10 @@ export async function pollQrCode(qrcodeKey) {
   if (!qrcodeKey) return { ok: false, state: 'error', message: '缺少二维码凭据' };
 
   try {
+    const riskToken = await getQrRiskToken();
     const res = await httpRequest({
       method: 'GET',
-      url: `${QR_POLL_URL}?qrcode_key=${encodeURIComponent(qrcodeKey)}`,
+      url: `${QR_POLL_URL}?${qrQuery({ qrcode_key: qrcodeKey, source: QR_SOURCE, b_ret: riskToken })}`,
       headers: { Referer: 'https://www.bilibili.com/' },
       anonymous: true,
       timeout: 8000

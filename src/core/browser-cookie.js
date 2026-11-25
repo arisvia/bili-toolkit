@@ -10,7 +10,10 @@
  *   1. **整组换，不换半个。** SESSDATA / bili_jct / sid / DedeUserID 必须同时换成同一个账号的值。
  *      只换 SESSDATA 会得到「B 的登录态 + A 的 csrf」，番剧 OGV 静默失败（code=0 但没有视频）。
  *   2. **删除也要删。** 旧账号独有的字段必须显式删除，否则会残留在浏览器里继续生效。
- *   3. **HttpOnly 属性要跟着走，但 bili_jct 必须可读。** SESSDATA / sid 写成 HttpOnly；
+ *   3. **HttpOnly 属性要跟着走，但 bili_jct 必须可读。** SESSDATA 优先写成 HttpOnly；
+ *      但部分管理器（实测 Violentmonkey 2.50.0 未开「允许访问 HttpOnly Cookie」时）
+ *      会**静默丢弃**带 `httpOnly: true` 的写入，接口却回报成功。此时必须退回非 HttpOnly
+ *      写入，否则切号只换了 bili_jct/DedeUserID，SESSDATA 还是旧号，刷新后整组被服务端重置。
  *      bili_jct 写成 HttpOnly 会让前端拿不到 csrf，投币 / 点赞 / 评论一律 -111。
  *
  * 能力探测：不同管理器提供的 API 名字不一样（GM.cookie.* 优先，退回 GM_setCookie）。
@@ -53,6 +56,51 @@ function apiLevel() {
 /** 能否改写浏览器登录态 */
 export function canWriteCookies() {
   return apiLevel() > 0;
+}
+
+/**
+ * Violentmonkey 2.50.0 默认没有「允许 GM_cookie 访问 HttpOnly Cookie」权限：
+ * chrome.cookies.set 之前会被 sw.js 里的守卫拦掉，而且错误不一定会回到页面脚本。
+ * 有权限时 GM.cookie.list 能返回 SESSDATA；没有权限时它会把 HttpOnly Cookie 过滤掉。
+ */
+function isViolentmonkey() {
+  try {
+    return (
+      typeof GM_info !== 'undefined' &&
+      GM_info &&
+      /violentmonkey/i.test(String(GM_info.scriptHandler || ''))
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+async function canWriteHttpOnlyCookies() {
+  if (!isViolentmonkey()) return true;
+  const api = getCookieApi();
+  if (!api || typeof api.list !== 'function') return false;
+  try {
+    const list = await api.list({ url: 'https://www.bilibili.com/', domain: COOKIE_DOMAIN });
+    return Array.isArray(list) && list.some((c) => c && c.name === 'SESSDATA' && c.httpOnly);
+  } catch (e) {
+    return false;
+  }
+}
+
+async function readSessdata() {
+  const api = getCookieApi();
+  if (!api || typeof api.list !== 'function') return null;
+  try {
+    const list = await api.list({
+      url: 'https://www.bilibili.com/',
+      domain: COOKIE_DOMAIN,
+      name: 'SESSDATA'
+    });
+    const hit = Array.isArray(list) && list.find((c) => c && c.name === 'SESSDATA');
+    return hit ? hit.value : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -167,6 +215,7 @@ export async function applyAccount(cookieString, staleKeys = []) {
 
   const written = [];
   const errors = [];
+  const httpOnlyWritable = await canWriteHttpOnlyCookies();
 
   // 计算持久有效期：B 站官方凭证生命周期通常为 180 天。
   // 若 Cookie 写入时不带 expirationDate / Max-Age，浏览器会默认将其标记为 Session Cookie，
@@ -191,7 +240,7 @@ export async function applyAccount(cookieString, staleKeys = []) {
           secure: true,
           expirationDate: exp
         };
-        if (HTTP_ONLY_COOKIE_KEYS.has(key)) details.httpOnly = true;
+        if (HTTP_ONLY_COOKIE_KEYS.has(key) && httpOnlyWritable) details.httpOnly = true;
         await gmCookieSet(details);
       } else {
         const parts = [
@@ -214,6 +263,16 @@ export async function applyAccount(cookieString, staleKeys = []) {
     } catch (e) {
       errors.push(key + ': ' + (e && e.message));
       log.warn('写入 Cookie 失败', key, e && e.message);
+    }
+  }
+
+  // GM_cookie.set 在部分管理器里对 HttpOnly 写入是「假成功」：
+  // 返回 resolve，实际 Cookie 没变。切号必须读到写后的 SESSDATA 才能算成功。
+  if (written.includes('SESSDATA')) {
+    const actual = await readSessdata();
+    if (actual !== null && actual !== target.SESSDATA) {
+      written.splice(written.indexOf('SESSDATA'), 1);
+      errors.push('SESSDATA: 写入后读回不一致');
     }
   }
 
