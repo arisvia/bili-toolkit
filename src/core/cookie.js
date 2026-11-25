@@ -51,7 +51,7 @@ export function validateCookie(str) {
   // 实测它们对接口无影响，且不该存（见 cookie-parse.js 的 TIERS.auto）。
   if (!p.DedeUserID) warnings.push('缺少 DedeUserID —— 借用不受影响，但「切到此号」后前端认不出当前用户');
   if (!p.bili_jct && !p['bili-jct']) {
-    warnings.push('缺少 bili_jct（番剧 OGV 必需 —— playview 是 POST 接口要用 csrf，且无法从 SESSDATA 推导）');
+    warnings.push('缺少 bili_jct（番剧 OGV 的 POST 端点要用 csrf，且无法从 SESSDATA 推导）');
   }
   return { ok: problems.length === 0, problems, warnings, parsed: p };
 }

@@ -139,6 +139,7 @@ console.log('\n[1] 账号池基本形状与旧数据迁移');
   const ctx2 = makeContext({});
   const api2 = await load('src/core/accounts.js', ctx2);
   check('无旧数据时池子为空', api2.list().length === 0);
+  check('无旧数据时不写空池（避免首屏 GM 存储未就绪时覆盖真实账号池）', !ctx2.__store.has('b.accounts'));
 }
 
 console.log('\n[2] 重复粘贴同一账号不会产生第二条');

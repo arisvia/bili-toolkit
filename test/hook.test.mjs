@@ -145,6 +145,7 @@ function makeEnv(cfgOverrides = {}, responder) {
     sandboxEntries: [
       { host: 'api.bilibili.com', path: '/x/player/wbi/playurl', method: 'GET' },
       { host: 'api.bilibili.com', path: '/pgc/player/web/v2/playurl', method: 'GET' },
+      { host: 'api.bilibili.com', path: '/ogv/player/playview', method: 'GET' },
       { host: 'api.bilibili.com', path: '/ogv/player/playview', method: 'POST' }
     ],
     localEntries: [{ host: 'api.bilibili.com', path: '/x/web-interface/nav' }],
@@ -265,20 +266,26 @@ console.log('\n[3] 非白名单请求原样放行');
   check('非白名单主机不会误伤', state.fetched.length === 3);
 }
 
-console.log('\n[4] 方法不匹配时不转交');
+console.log('\n[4] 方法匹配');
 {
   const { state, FakeXHR } = makeEnv();
   const xhr = new FakeXHR();
-  xhr.open('GET', '/ogv/player/playview?ep_id=1');
+  xhr.open('GET', '//api.bilibili.com/ogv/player/playview?ep_id=1');
   xhr.send();
   await sleep(10);
-  check('GET 不会打到只允许 POST 的端点', state.sent.length === 0 && state.fetched.length === 1);
+  check('GET 新版番剧 playview 会转交', state.sent.length === 1, state.sent.length);
 
   const xhr2 = new FakeXHR();
   xhr2.open('POST', '//api.bilibili.com/ogv/player/playview?ep_id=1');
   xhr2.send('{}');
   await sleep(10);
-  check('POST 会转交', state.sent.length === 1, state.sent.length);
+  check('POST 旧版番剧 playview 也会转交', state.sent.length === 2, state.sent.length);
+
+  const xhr3 = new FakeXHR();
+  xhr3.open('POST', '//api.bilibili.com/x/player/wbi/playurl');
+  xhr3.send('{}');
+  await sleep(10);
+  check('方法不匹配时不转交', state.sent.length === 2, state.sent.length);
 }
 
 console.log('\n[5] fetch 路径');
@@ -361,7 +368,7 @@ console.log('\n[10] nanoPlayer (现代番剧播放器) 劫持与流地址接管'
   check('hydrate 数据被补充完整 play_video_type', win.__PLAYURL_HYDRATE_DATA__.result.play_video_type === 'whole');
   // 模拟真实页面初始化 nanoPlayer
   const dummyNano = {
-    createPlayer: (cfg) => ({ cfg })
+    createPlayer: (cfg) => ({ cfg, lastRequestConfig: null, updateRequestConfig(n) { this.lastRequestConfig = n; } })
   };
   win.nano = dummyNano;
   const created = win.nano.createPlayer({
@@ -375,9 +382,43 @@ console.log('\n[10] nanoPlayer (现代番剧播放器) 劫持与流地址接管'
   check('prefetch.playUrl 被删除', created.cfg.prefetch.playUrl === undefined);
   check('reqHttpPlayUrlInfo 属性被显式删除', created.cfg.requestConfig.reqHttpPlayUrlInfo === undefined);
   check('reqHttpPlayUrlInfoScope 被删除', created.cfg.requestConfig.reqHttpPlayUrlInfoScope === undefined);
+  created.updateRequestConfig({
+    reqHttpPlayUrlInfo: () => Promise.resolve({ preview: true }),
+    reqHttpPlayUrlInfoScope: [1]
+  });
+  check(
+    'updateRequestConfig 重新塞回的 reqHttpPlayUrlInfo 被清掉',
+    created.lastRequestConfig && created.lastRequestConfig.reqHttpPlayUrlInfo === undefined
+  );
+  check(
+    'updateRequestConfig 重新塞回的 reqHttpPlayUrlInfoScope 被清掉',
+    created.lastRequestConfig && created.lastRequestConfig.reqHttpPlayUrlInfoScope === undefined
+  );
   await win.fetch('https://api.bilibili.com/pgc/player/web/v2/playurl?ep_id=766336');
   check('回落请求被接管转交沙箱', sandboxedUrl && sandboxedUrl.includes('ep_id=766336'), sandboxedUrl);
   win.__teardown();
+}
+
+console.log('\n[10b] 晚到的 window.player 也会被接管');
+{
+  const env = makeEnv({ hidePlayinfo: true });
+  const fakePlayer = {
+    cfg: null,
+    updateRequestConfig(n) { this.cfg = n; },
+    on() {},
+    toggleFeature() {},
+    play() { return Promise.resolve(); },
+    reload() {}
+  };
+  env.vmGlobal.nano = { createPlayer: (cfg) => ({ cfg }) };
+  env.vmGlobal.player = fakePlayer;
+  check('window.player 赋值后立即打上接管标记', fakePlayer.__biliVipPlayerHooked === true);
+  fakePlayer.updateRequestConfig({
+    reqHttpPlayUrlInfo: () => Promise.resolve({ preview: true }),
+    reqHttpPlayUrlInfoScope: [1]
+  });
+  check('晚接管也会净化 updateRequestConfig', fakePlayer.cfg && fakePlayer.cfg.reqHttpPlayUrlInfo === undefined);
+  env.win.__teardown();
 }
 
 console.log('[11] 软登出凭据保活拦截');

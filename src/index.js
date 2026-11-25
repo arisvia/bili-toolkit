@@ -47,7 +47,36 @@ function boot() {
   // 而播放器的首个 playurl 往往几十毫秒内就到，必然赶不上 → 第一次永远退回原始参数。
   // 读一次池子，顺带完成旧版单账号数据的迁移。
   pool();
+  // 再推一次配置：GM 存储在首次 document-start 读取时可能还没就绪，
+  // 内联配置会拿到 patchVip=false；池子读完后补推，钩子会把已创建的
+  // 播放器重新接管，不必用户手动刷新。
+  pushConfig(liveConfig(token));
+  // 有些脚本管理器在首屏第一次读取 GM 存储时缓存尚未填充，第一次
+  // hasCookie() 会短暂为 false。每 200ms 重推一次配置，最多等 60 秒；
+  // 钩子收到 patchVip=true 后会重新接管已存在的播放器并 reload。
+  // 不能只等 2 秒：冷启动的扩展后台可能几秒后才把脚本存储灌进页面世界，
+  // 超时就放弃会让首屏永远停在 A 的试看数据上，只能靠用户刷新。
+  let configReady = false;
+  let configTries = 0;
+  const configTimer = setInterval(() => {
+    configTries++;
+    const ready = store.isEnabled() && hasCookie();
+    pushConfig(liveConfig(token));
+    if (ready) {
+      if (!configReady) {
+        configReady = true;
+        ensureMixinKey().then((k) => {
+          if (!k) log.warn(TEXT.startup.noMixinKey);
+          else refreshPanel();
+        });
+      }
+      clearInterval(configTimer);
+    } else if (configTries >= 300) {
+      clearInterval(configTimer);
+    }
+  }, 200);
   if (store.isEnabled() && hasCookie()) {
+    configReady = true;
     ensureMixinKey().then((k) => {
       if (!k) log.warn(TEXT.startup.noMixinKey);
       else refreshPanel();
