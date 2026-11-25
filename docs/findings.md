@@ -1,4 +1,4 @@
-﻿# 实测结论
+# 实测结论
 
 本文只记录**用真实请求/真实数据验证过的事实**，不含设想与计划。
 
@@ -272,8 +272,9 @@ SESSDATA + DedeUserID + bili_jct   → quality=120/4K（与上面完全一致）
 **`bili_jct` 无法从 `SESSDATA` 推导**：试过 5 种已知公式
 （`md5(md5(K+s)+K)` 等）全部与真实值不匹配，只能从 DevTools 一起复制。
 
-**注意**：消融只覆盖普通视频的 playurl（GET）。番剧 playview 是 POST + csrf，
-`bili_jct` 的作用要在那里才测得到 —— 所以「无影响」只适用于普通视频。
+**注意**：消融只覆盖普通视频的 playurl（GET）。番剧 playview 有 GET（新版页面，无 csrf）
+与 POST（旧版页面，需要 csrf）两种形态，`bili_jct` 的作用要在 POST 那里才测得到 ——
+所以「无影响」只适用于普通视频。
 
 **复验**：`npm run verify:cookie`（逐字段消融 + 最小集对照）。
 
@@ -460,7 +461,7 @@ SESSDATA / bili_jct / sid / DedeUserID(+__ckMd5)
 ```
 
 - `sid` 与 `SESSDATA` 成对的服务端会话，跨账号沿用必然出错（呼应 §11 的消融结论）
-- `bili_jct` 是番剧 playview POST 的 csrf，与 SESSDATA 同源
+- `bili_jct` 是番剧 OGV POST 端点（playview/playurl）的 csrf，与 SESSDATA 同源
 - `DedeUserID` 不换的话前端仍按旧号渲染头像与昵称
 
 **还要删**：目标账号没有、而浏览器里有的字段必须显式删除，否则旧字段继续生效。
@@ -631,3 +632,69 @@ borrowId  显式指定的借用来源；null = 自动
 3. **防御性诚实回退实测**：
    - 当脚本管理器缺少 Cookie 删除特权（`level === 0`）时，软登出如实返回失败并触发 `passthrough: true`，放行原生退出请求让页面自己处理，绝不虚假伪造退出成功。
 **复验**：`npm test`（`test/hook.test.mjs` 第 [11] 组，`test/accounts.test.mjs` 第 [19] 组）。
+
+---
+
+## §25 新版番剧页的 playview 是 GET，且 createPlayer 之后还会重设 requestConfig
+
+**结论**：2026-11 的 Next.js 番剧播放页（nanoPlayer 4.10.13-bcb64775）不再用 `POST /ogv/player/playview`，而是 `GET /ogv/player/playview`；同时 `playpage.js` 在 `nano.createPlayer()` 返回后会调用 `player.updateRequestConfig(N(n))`，把首屏 SSR 的 `reqHttpPlayUrlInfo` / `reqHttpPlayUrlInfoScope` 重新塞回播放器。旧实现只删 `createPlayer` 首参里的这两个字段、且只登记 POST playview，于是：
+
+1. 播放器重新走页面自己的 `/ogv/player/playview` GET，钩子白名单匹配不到 → 代理完全看不到请求；
+2. 即使播放器回落到 `/pgc/player/web/v2/playurl`，页面重设的 `reqHttpPlayUrlInfo` 也可能让它改走未登记的 playview。
+
+**证据**：
+- 线上 page chunk `pages/bangumi/play/[videoId]-*.js`：`fetchPlayView(e,n,t){return e({url:E[this.env],method:"GET",headers:t,params:n})}`，`createPlayViewQuery` 带 `biz_type` / `scene` / `ep_id` / `season_id` / `cid` / `is_qn_trial` 等；
+- 同一路径 `POST` → HTTP 405；`GET` 在带 `buvid3` 时返回 `code:0`；
+- `playpage.js`：`o.current=(e,n)=>{e.updateRequestConfig(N(n))}`，`N` 返回 `{reqHttpPlayUrlInfo, reqHttpPlayUrlInfoScope:[T]}`。
+
+**修法**：
+- 端点表同时登记 `GET` 与 `POST` 两种 playview（GET 无 csrf，POST 保留 csrf）；
+- `hookNano` 包装 `player.updateRequestConfig`，删除重新塞回的 `reqHttpPlayUrlInfo` / `reqHttpPlayUrlInfoScope`，让播放器回落到已登记的 `/pgc/player/web/v2/playurl`；
+- `applyQuality` 删除新版页面携带的 `is_qn_trial=1`，否则 B 的大会员画质会被服务端按试看流降级；
+- `tryPrefetch` 的番剧分支改为 GET，查询串补 `biz_type=ogv&scene=normal`，并从 `__PLAYURL_HYDRATE_DATA__.result.arc` 兜底取 `cid`（新版页面没有 `__INITIAL_STATE__`）。
+
+**复验**：`npm test`（`test/hook.test.mjs` 第 [4]/[10] 组、`test/proxy.test.mjs` 第 [4b] 组、`test/smoke.test.mjs`）；真实浏览器探针确认页面不再发出未登记的 playview GET，播放器回落到 `/pgc/player/web/v2/playurl` 并被钩子接管。
+
+---
+
+## §26 首屏「大会员专享」提示条与晚到的 window.player
+
+**结论**：番剧/影视首屏偶尔仍显示「本片是大会员专享内容 / 试看中」不是 `#big-block-panel`，而是播放器 toast 里的 `PromptBar`：
+
+```
+div.bpx-player-toast-item
+  └─ div.bpx-player-toast-text
+       └─ div.PromptBar_container...
+            └─ div.PromptBar_title...[data-testid="prompt-bar-title"]
+```
+
+它由首屏 SSR 的试看数据直接渲染，刷新或切集后 B 的 playurl 回来才消失。只删 `#big-block-panel` 覆盖不到它。
+
+**晚到场景**：用户脚本偶尔晚于页面内联脚本注入，`window.player` 已经创建；只包 `nano.createPlayer` 时，这个已存在的实例不会被接管，首屏会一直用 SSR 试看数据。现在 `hookNano` 会：
+
+1. 对 `window.player` 的现有值与后续赋值调用 `hookPlayer`（打 `__biliVipPlayerHooked` 标记，避免重复包装）；
+2. `hookPlayer` 里安装 `MutationObserver`，监听 `.bpx-player-toast-item` 插入，命中 `/大会员专享|成为大会员|试看中/` 就移除；
+3. 播放器 `player_block` 回调与 300ms 解锁轮询里也调用同一个清理函数。
+
+**证据**：VIP 集 `https://www.bilibili.com/bangumi/play/ep3854825`（凡人修仙传 201 集）无钩子时 toast 文本完整包含上述提示；晚注入钩子后 12 秒内 `bodyHasGate:false`、`.bpx-player-toast-item` 为空、`window.player.__biliVipPlayerHooked:true`，且播放器经代理发出 `GET /ogv/player/playview`。
+
+**复验**：`npm test`（`test/hook.test.mjs` 第 [10b] 组）；真实浏览器探针 `D:\Files\Projects\pwtest\probe-vip-late.mjs`。
+
+---
+
+## §27 首屏 GM 存储未就绪与空账号池覆盖
+
+**结论**：首屏有时仍用当前未开通大会员的账号取流、刷新后才恢复，根因不在 playurl 端点，而在账号池的初始化时序：
+
+- 用户脚本在 `document-start` 执行时，脚本管理器的 GM 存储可能还没把 `b.accounts` 注入到页面世界；
+- 旧版 `pool()` 在 `store.getPool()` 返回 `null` 时直接 `store.setPool(emptyPool())`，把空池写回存储；
+- 后续即使真实账号池数据到达，`b.accounts` 已被空池覆盖，`hasCookie()` 一直为 false，代理只能放行 A 的请求；
+- 刷新页面后 GM 存储先就绪，`pool()` 读到真实账号池，才恢复正常。
+
+**修法**：
+
+1. `src/core/accounts.js` 的 `pool()` 不再在无数据时写空池；空池只在 `savePool()`（用户主动增删账号）或 `clearPool()` 时落盘；
+2. `buildHookConfig()` / `liveConfig()` 把 `hidePlayinfo`（挡 SSR、强制走代理）与 `patchVip`（会员 UI 伪装）拆开：`hidePlayinfo` 只看总开关，首屏就能挡住 SSR 试看数据；`patchVip` 仍要求 `hasCookie()`；
+3. `src/index.js` 在 `pool()` 后立即补推配置，并在 2 秒内每 100ms 重推，直到 `hasCookie()` 为真；钩子的 `applyCfg()` 收到 `patchVip=true` 后会接管已存在的 `window.player` 并触发 reload。
+
+**复验**：真实浏览器探针 `D:\Files\Projects\pwtest\probe-userscript-delayed-store.mjs`（GM 存储延迟到 1200ms 才可读）从 `patchVip:false / playerHooked:false / 出现提示条` 变为全程 `patchVip:true / playerHooked:true / 无提示条`，并出现 `代理成功 ogv-playview-get`；`test/accounts.test.mjs` 第 [1] 组新增「无旧数据时不写空池」断言。

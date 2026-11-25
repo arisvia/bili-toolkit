@@ -190,7 +190,7 @@ export function helperHelp() {
     '  只能从 DevTools 面板复制，没有替代方案。',
     '· DedeUserID / DedeUserID__ckMd5 / sid —— 只有切号才用得上，',
     '  缺了切号后前端认不出「我是谁」。',
-    '· bili_jct —— 番剧 OGV 必需（playview 是 POST 接口，要 csrf）。',
+    '· bili_jct —— 番剧 OGV 必需（POST 版 playview/playurl 要用 csrf）。',
     '  它无法从 SESSDATA 推导，只能一起复制。',
     '',
     '【不保存的】',

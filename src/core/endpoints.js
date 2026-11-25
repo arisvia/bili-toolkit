@@ -66,8 +66,20 @@ export const ENDPOINTS = [
   },
 
   // ---------- 番剧 / OGV ----------
+  // 新版 Next.js 番剧页（nanoPlayer 4.10.x）用 GET 取 playview；旧版/部分入口仍用 POST。
+  // 同一个 path 两种方法都必须登记，否则新版页面的首屏取流会绕过代理，表现就是
+  // 「普通视频能接管，番剧/电影接管不到」。
   {
-    id: 'ogv-playview',
+    id: 'ogv-playview-get',
+    host: 'api.bilibili.com',
+    method: 'GET',
+    path: '/ogv/player/playview',
+    mode: 'proxy',
+    kind: 'ogv',
+    wbi: 'if-present'
+  },
+  {
+    id: 'ogv-playview-post',
     host: 'api.bilibili.com',
     method: 'POST',
     path: '/ogv/player/playview',

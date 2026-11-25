@@ -3,6 +3,18 @@
 本项目所有显著变更均记录于此文件。
 版本格式遵循 [语义化版本 2.0.0 (SemVer)](https://semver.org/lang/zh-CN/)。
 
+## [v1.3.2] - 2026-11-25
+
+### 优化与修复 (Improvements & Fixes)
+- **番剧 / 电影首屏接管修复**：新版 Next.js 番剧页改用 `GET /ogv/player/playview`，原端点表只登记了 POST，导致页面首屏取流完全绕过代理；现同时登记 GET（无 csrf）与 POST（旧版，保留 csrf）两种形态。
+- **nanoPlayer requestConfig 净化**：页面在 `createPlayer` 之后会通过 `player.updateRequestConfig` 重新塞回 `reqHttpPlayUrlInfo` / `reqHttpPlayUrlInfoScope`；现包装该方法并删除这两个字段，强制播放器回落到已接管的 `/pgc/player/web/v2/playurl`。
+- **大会员画质提升**：删除新版页面携带的 `is_qn_trial=1` 试看标记，避免服务端把借用账号的大会员画质按试看流降级。
+- **番剧预热修正**：`tryPrefetch` 的番剧分支改为 GET，补 `biz_type=ogv&scene=normal`，并从 `__PLAYURL_HYDRATE_DATA__.result.arc` 兜底取 `cid`（新版页面没有 `__INITIAL_STATE__`）。
+- **首屏账号池覆盖修复**：脚本管理器在 `document-start` 首次读取 GM 存储时可能尚未注入完成，旧逻辑会把空账号池写回 `b.accounts`，导致首次进入番剧/影视页始终用当前未开通大会员的账号取流，必须刷新一次才恢复。现在无账号数据时不写空池，空池仅在用户主动增删账号时落盘。
+- **首屏接管与会员 UI 解耦**：`hidePlayinfo` 只负责挡住 SSR 播放数据、强制请求走代理，不再依赖 B 账号是否已读到；`patchVip` 单独控制会员提示条、收银台与假会员 UI，只有确实有可借用账号时才启用。配置会在首屏持续补推，钩子收到后重新接管已创建的播放器，减少首次进入的竞态。
+- **首屏提示条 / 收银台清理**：番剧/影视首屏偶发的「本片是大会员专享内容 / 试看中」提示条来自 `.bpx-player-toast-item` 的 PromptBar，会员购买弹窗则是 PAYWALL 插件创建的 `#BilibiliVipDialog` iframe；现在用 MutationObserver 同时清理提示条、收银台与 `paywallView_container`，避免首次进入页面闪出试看或购买弹窗。
+- **晚到 player 接管**：用户脚本晚于页面内联脚本注入时，`window.player` 已创建会绕过 `createPlayer` 钩子；现在接管现有 `window.player` 及后续赋值，并轮询等待晚到实例，确保首屏也强制 reload 走代理。
+
 ## [v1.3.1] - 2026-11-03
 
 ### 优化与修复 (Improvements & Fixes)

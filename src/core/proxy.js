@@ -116,6 +116,9 @@ function applyQuality(ep, url) {
   url.searchParams.set('platform', 'pc');
   url.searchParams.set('high_quality', '1');
   url.searchParams.delete('try_look'); // 试看限定由服务端控制，这里不主动请求
+  // 新版番剧页会带 is_qn_trial=1（未登录/非会员的试看标记）；带着它请求 B 的会员画质
+  // 会被服务端降级成试看流，必须删掉，让 qn=127 真正按大会员档位取流。
+  url.searchParams.delete('is_qn_trial');
 }
 
 /** 把 csrf 写进 body（JSON 或 form-urlencoded） */

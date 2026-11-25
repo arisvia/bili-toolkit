@@ -27,7 +27,18 @@
 
   var token = CFG.token || '';
   var hidePlayinfo = !!CFG.hidePlayinfo;
+  // 是否要把页面上的会员标志改成「已开通」。和 hidePlayinfo 分开：
+  // 挡 SSR / 强制走 playurl 是「接管」的前提，没有 B 账号也可以做；
+  // 伪造会员 UI 必须确实有 B 账号，否则只会显示假会员画质。
+  var patchVip = CFG.patchVip === undefined ? hidePlayinfo : !!CFG.patchVip;
   var patchUi = !!CFG.patchUi;
+  // 诊断快照：面板/控制台可以看到首屏到底拿到了什么配置，避免再靠猜。
+  function syncCfgState() {
+    try {
+      window.__BILI_VIP_CFG_STATE = { hidePlayinfo: hidePlayinfo, patchVip: patchVip, patchUi: patchUi };
+    } catch (e) {}
+  }
+  syncCfgState();
   var doPrefetch = !!CFG.prefetch;
   var softLogout = CFG.softLogout !== false;
   var region = CFG.region || 'off';
@@ -180,11 +191,19 @@
   function applyCfg(cfg) {
     if (!cfg) return;
     if (typeof cfg.hidePlayinfo === 'boolean') hidePlayinfo = cfg.hidePlayinfo;
+    if (typeof cfg.patchVip === 'boolean') patchVip = cfg.patchVip;
     if (typeof cfg.patchUi === 'boolean') patchUi = cfg.patchUi;
     if (typeof cfg.prefetch === 'boolean') doPrefetch = cfg.prefetch;
     if (typeof cfg.softLogout === 'boolean') softLogout = cfg.softLogout;
     if (typeof cfg.region === 'string') region = cfg.region;
+    syncCfgState();
     updateSsHooks();
+    // 配置可能在首屏之后才补到（扩展存储的读取时序）：补到时把已经创建的
+    // 播放器接回来，否则玩家会一直用 createPlayer 时的旧状态。
+    if (patchVip && playerVal && hookPlayerRef) {
+      playerVal = hookPlayerRef(playerVal);
+    }
+    if (patchVip) startPlayerWatch();
   }
 
   /* ---------------- 响应模拟 ---------------- */
@@ -382,10 +401,10 @@
       configurable: true,
       enumerable: true,
       get: function () {
-        return hidePlayinfo && hydrateValue ? patchVipFlags(hydrateValue, 0) : hydrateValue;
+        return patchVip && hydrateValue ? patchVipFlags(hydrateValue, 0) : hydrateValue;
       },
       set: function (v) {
-        hydrateValue = hidePlayinfo && v ? patchVipFlags(v, 0) : v;
+        hydrateValue = patchVip && v ? patchVipFlags(v, 0) : v;
       }
     });
   } catch (e) {}
@@ -395,6 +414,195 @@
   function hookNano(nano) {
     if (!nano || nano.__biliVipHooked) return nano;
     nano.__biliVipHooked = true;
+    var promptObserver = null;
+    watchVipPrompt();
+    /**
+     * 番剧/影视的「大会员专享」提示条不是 #big-block-panel，而是
+     * .bpx-player-toast-item 里的 PromptBar。首屏 SSR 数据还没来得及被代理替换时
+     * 会先渲染出来；刷新/切集后新的 playurl 回来才消失。
+     * 这里在它出现时直接移除，避免首次进入页面时闪出「本片是大会员专享内容」。
+     */
+    function removeVipPromptBar() {
+      try {
+        // 番剧/影视的会员提示条有两代 DOM：
+        //   · 旧版 package 在 .bpx-player-toast-item 里；
+        //   · 当前 Next.js 页面直接渲染 [class*="PromptBar_container"]，
+        //     标题节点是 [data-testid="prompt-bar-title"]，没有 toast 外层。
+        // 只查 .bpx-player-toast-item 会漏掉当前页面，导致首屏一直显示
+        // 「本片是大会员专享内容 / 试看中」。
+        var selectors = [
+          '.bpx-player-toast-item',
+          '[class*="PromptBar_container"]',
+          '[data-testid="prompt-bar-title"]',
+          '[class*="PromptBar_remindInfoWrap"]'
+        ];
+        for (var s = 0; s < selectors.length; s++) {
+          var items = document.querySelectorAll(selectors[s]);
+          for (var i = items.length - 1; i >= 0; i--) {
+            var text = items[i].textContent || '';
+            if (!/大会员专享|成为大会员|试看中/.test(text)) continue;
+            var host = items[i].closest ? items[i].closest('[class*="PromptBar_container"]') : null;
+            (host || items[i]).remove();
+          }
+        }
+        // 新版 OGV 在 play_video_type=Preview 时会通过 PAYWALL 插件打开收银台：
+        // #BilibiliVipDialog 是一个整页 iframe，文案是「成为大会员解锁高清体验」。
+        // 它不在 bpx-player-toast-item 里，只移除 toast 会留下这个弹窗。
+        var dialog = document.getElementById('BilibiliVipDialog');
+        if (dialog) dialog.remove();
+        var paywalls = document.querySelectorAll('[class*="paywallView_container"], [data-testid="paywall-title"]');
+        for (var j = paywalls.length - 1; j >= 0; j--) {
+          var payHost = paywalls[j].closest ? paywalls[j].closest('[class*="paywallView_container"]') : null;
+          (payHost || paywalls[j]).remove();
+        }
+        var bp = document.getElementById('big-block-panel');
+        if (bp) bp.remove();
+      } catch (e) {}
+    }
+
+    function watchVipPrompt() {
+      if (!hidePlayinfo || promptObserver || typeof MutationObserver === 'undefined') return;
+      var root = document.documentElement || document.body;
+      if (!root) {
+        setTimeout(watchVipPrompt, 50);
+        return;
+      }
+      promptObserver = new MutationObserver(function (records) {
+        for (var i = 0; i < records.length; i++) {
+          var added = records[i].addedNodes || [];
+          for (var j = 0; j < added.length; j++) {
+            var node = added[j];
+            if (!node || node.nodeType !== 1) continue;
+            if (
+              (node.matches &&
+                node.matches(
+                  '.bpx-player-toast-item, #BilibiliVipDialog, [class*="paywallView_container"], [data-testid="paywall-title"], [class*="PromptBar_container"], [data-testid="prompt-bar-title"], [class*="PromptBar_remindInfoWrap"]'
+                )) ||
+              (node.querySelector &&
+                node.querySelector(
+                  '.bpx-player-toast-item, #BilibiliVipDialog, [class*="paywallView_container"], [data-testid="paywall-title"], [class*="PromptBar_container"], [data-testid="prompt-bar-title"], [class*="PromptBar_remindInfoWrap"]'
+                ))
+            ) {
+              removeVipPromptBar();
+              return;
+            }
+          }
+        }
+      });
+      promptObserver.observe(root, { childList: true, subtree: true });
+      removeVipPromptBar();
+    }
+
+    /**
+     * 给一个已创建的播放器实例装上「借权」行为。
+     *
+     * 除了 createPlayer 返回的新实例，还要覆盖两种晚到场景：
+     *   · 钩子注入时 window.player 已经存在（扩展注入晚于页面内联脚本）
+     *   · 页面自己把 window.player 换成新实例
+     * 只包 createPlayer 时，这两种情况下首屏会一直用 SSR 里的试看数据，
+     * 表现就是「刚进页面显示要大会员，刷新/切集才好」。
+     */
+    function hookPlayer(player) {
+      if (!player || !patchVip || player.__biliVipPlayerHooked) return player;
+      player.__biliVipPlayerHooked = true;
+      try { window.__BILI_VIP_PLAYER_HOOKED = true; } catch (e) {}
+      watchVipPrompt();
+      // Next.js 番剧页在 createPlayer 之后还会调用 player.updateRequestConfig(N(n))
+      // 把 reqHttpPlayUrlInfo / reqHttpPlayUrlInfoScope 塞回来（playpage.js 的 o.current）。
+      // 只删 createPlayer 首参不够：播放器会重新走页面自己的 /ogv/player/playview，
+      // 如果那个请求没有被白名单接住（旧版只登记了 POST），就会出现「番剧接管不到」。
+      // 这里对 updateRequestConfig 再做一次净化，保证首屏和后续切集都回落到
+      // /pgc/player/web/v2/playurl，由代理统一接管。
+      var origUpdateRequestConfig = player.updateRequestConfig;
+      if (typeof origUpdateRequestConfig === 'function') {
+        player.updateRequestConfig = function (cfg) {
+          if (cfg && typeof cfg === 'object') {
+            try {
+              delete cfg.reqHttpPlayUrlInfo;
+              delete cfg.reqHttpPlayUrlInfoScope;
+            } catch (e) {}
+          }
+          return origUpdateRequestConfig.apply(this, arguments);
+        };
+      }
+
+      var origOn = player.on;
+      if (typeof origOn === 'function') {
+        player.on = function (event, handler) {
+          if (
+            event === 'Player_Access_Changed' ||
+            event === 'player_access_changed' ||
+            (window.nano && window.nano.EventType && event === window.nano.EventType.Player_Access_Changed)
+          ) {
+            return this;
+          }
+          return origOn.apply(this, arguments);
+        };
+      }
+
+      if (typeof origOn === 'function') {
+        try {
+          origOn.call(player, 'player_block', function () {
+            try {
+              if (typeof player.toggleFeature === 'function') {
+                player.toggleFeature({ play: false, pause: false, seek: false, shortcut: false });
+              }
+              removeVipPromptBar();
+              if (typeof player.play === 'function') {
+                player.play().catch(function () {});
+              }
+            } catch (e) {}
+          });
+        } catch (e) {}
+      }
+
+      if (!player.__biliReloaded) {
+        player.__biliReloaded = true;
+        setTimeout(function () {
+          try {
+            if (typeof player.toggleFeature === 'function') {
+              player.toggleFeature({ play: false, pause: false, seek: false, shortcut: false });
+            }
+            if (typeof player.reload === 'function') {
+              player.reload();
+            }
+          } catch (e) {}
+
+          var attempts = 0;
+          var unlockTimer = setInterval(function () {
+            attempts++;
+            removeVipPromptBar();
+
+            try {
+              if (typeof player.toggleFeature === 'function') {
+                player.toggleFeature({ play: false, pause: false, seek: false, shortcut: false });
+              }
+            } catch (e) {}
+
+            var v = player.mediaElement || (typeof document !== 'undefined' ? document.querySelector('video') : null);
+            var isBlob = v && v.currentSrc && v.currentSrc.indexOf('blob:') === 0;
+
+            if (v && v.paused) {
+              try {
+                if (typeof player.play === 'function') {
+                  player.play().catch(function () {});
+                }
+              } catch (e) {}
+            }
+
+            if ((v && !v.paused && isBlob) || attempts >= 15) {
+              clearInterval(unlockTimer);
+            }
+          }, 300);
+        }, 50);
+      }
+      return player;
+    }
+
+    hookPlayerRef = hookPlayer;
+    if (playerVal) playerVal = hookPlayer(playerVal);
+    if (patchVip) startPlayerWatch();
+
     var origCreate = nano.createPlayer;
     if (typeof origCreate !== 'function') return nano;
 
@@ -408,86 +616,33 @@
           delete config.requestConfig.reqHttpPlayUrlInfoScope;
         }
       }
-      var player = origCreate.apply(this, arguments);
-      if (player && hidePlayinfo) {
-        var origOn = player.on;
-        if (typeof origOn === 'function') {
-          player.on = function (event, handler) {
-            if (
-              event === 'Player_Access_Changed' ||
-              event === 'player_access_changed' ||
-              (window.nano && window.nano.EventType && event === window.nano.EventType.Player_Access_Changed)
-            ) {
-              return this;
-            }
-            return origOn.apply(this, arguments);
-          };
-        }
-
-        if (typeof origOn === 'function') {
-          try {
-            origOn.call(player, 'player_block', function () {
-              try {
-                if (typeof player.toggleFeature === 'function') {
-                  player.toggleFeature({ play: false, pause: false, seek: false, shortcut: false });
-                }
-                var bp = typeof document !== 'undefined' ? document.getElementById('big-block-panel') : null;
-                if (bp) bp.remove();
-                if (typeof player.play === 'function') {
-                  player.play().catch(function () {});
-                }
-              } catch (e) {}
-            });
-          } catch (e) {}
-        }
-
-        if (!player.__biliReloaded) {
-          player.__biliReloaded = true;
-          setTimeout(function () {
-            try {
-              if (typeof player.toggleFeature === 'function') {
-                player.toggleFeature({ play: false, pause: false, seek: false, shortcut: false });
-              }
-              if (typeof player.reload === 'function') {
-                player.reload();
-              }
-            } catch (e) {}
-
-            var attempts = 0;
-            var unlockTimer = setInterval(function () {
-              attempts++;
-              var bp = typeof document !== 'undefined' ? document.getElementById('big-block-panel') : null;
-              if (bp) bp.remove();
-
-              try {
-                if (typeof player.toggleFeature === 'function') {
-                  player.toggleFeature({ play: false, pause: false, seek: false, shortcut: false });
-                }
-              } catch (e) {}
-
-              var v = player.mediaElement || (typeof document !== 'undefined' ? document.querySelector('video') : null);
-              var isBlob = v && v.currentSrc && v.currentSrc.indexOf('blob:') === 0;
-
-              if (v && v.paused) {
-                try {
-                  if (typeof player.play === 'function') {
-                    player.play().catch(function () {});
-                  }
-                } catch (e) {}
-              }
-
-              if ((v && !v.paused && isBlob) || attempts >= 15) {
-                clearInterval(unlockTimer);
-              }
-            }, 300);
-          }, 50);
-        }
-      }
-      return player;
+      return hookPlayer(origCreate.apply(this, arguments));
     };
+
     return nano;
   }
 
+  var hookPlayerRef = null;
+  var playerVal = window.player;
+  var playerWatchTimer = null;
+  function startPlayerWatch() {
+    if (playerWatchTimer || typeof setInterval === 'undefined') return;
+    var tries = 0;
+    playerWatchTimer = setInterval(function () {
+      tries++;
+      if (playerVal && hookPlayerRef) {
+        playerVal = hookPlayerRef(playerVal);
+        if (playerVal && playerVal.__biliVipPlayerHooked) {
+          clearInterval(playerWatchTimer);
+          playerWatchTimer = null;
+        }
+      }
+      if (tries >= 300) {
+        clearInterval(playerWatchTimer);
+        playerWatchTimer = null;
+      }
+    }, 200);
+  }
   var nanoVal = window.nano;
   if (nanoVal) hookNano(nanoVal);
   try {
@@ -499,6 +654,21 @@
       },
       set: function (v) {
         nanoVal = hookNano(v);
+      }
+    });
+  } catch (e) {}
+  // 钩子注入晚于页面内联脚本时，window.player 可能已经创建；直接接管它，
+  // 否则首屏会一直用 SSR 的试看数据（表现为刚进页面提示要大会员）。
+  // hookPlayerRef 在 hookNano 里赋值，nano 还没出现时先原样存着，等 nano 到了再接管。
+  try {
+    Object.defineProperty(window, 'player', {
+      configurable: true,
+      enumerable: true,
+      get: function () {
+        return playerVal;
+      },
+      set: function (v) {
+        playerVal = hookPlayerRef ? hookPlayerRef(v) : v;
       }
     });
   } catch (e) {}
@@ -547,7 +717,7 @@
 
   var ssTimer = null;
   function updateSsHooks() {
-    if (patchUi || hidePlayinfo || region !== 'off') {
+    if (patchVip || region !== 'off') {
       if (!ssTimer) {
         ssTimer = setInterval(patchSsUser, 200);
         setTimeout(function () {
@@ -737,7 +907,7 @@
     try {
       var o = JSON.parse(text);
       if (o && typeof o === 'object') {
-        patchVipFlags(o, 0);
+        if (patchVip) patchVipFlags(o, 0);
         patchRegionFlags(o, 0);
         return JSON.stringify(o);
       }
@@ -805,12 +975,29 @@
     } else if (path.indexOf('/bangumi/play/') === 0) {
       var s2 = window.__INITIAL_STATE__;
       var vi = s2 && (s2.videoInfo || (s2.epInfo || null));
-      if (!vi || !vi.ep_id || !vi.cid) return;
-      var url = 'https://api.bilibili.com/ogv/player/playview?ep_id=' + encodeURIComponent(vi.ep_id) + '&cid=' + encodeURIComponent(vi.cid);
+      var epId = vi && vi.ep_id;
+      var cid = vi && vi.cid;
+      // 新版 Next.js 番剧页没有 __INITIAL_STATE__，首屏数据在
+      // __PLAYURL_HYDRATE_DATA__.result（arc/ep 信息）里；ep_id 从路径取。
+      if (!epId || !cid) {
+        var h = window.__PLAYURL_HYDRATE_DATA__;
+        var arc = h && h.result && h.result.arc;
+        var m = path.match(/^\/bangumi\/play\/ep(\d+)/);
+        if (!epId && m) epId = m[1];
+        if (!cid && arc) cid = arc.cid;
+      }
+      if (!epId || !cid) return;
+      var url =
+        'https://api.bilibili.com/ogv/player/playview?biz_type=ogv&scene=normal&ep_id=' +
+        encodeURIComponent(epId) +
+        '&cid=' +
+        encodeURIComponent(cid);
       var key = url;
       if (key === lastPrefetchKey) return;
       lastPrefetchKey = key;
-      post({ type: 'prefetch', token: token, url: url, method: 'POST', body: '', headers: {} });
+      // 新版页面 fetchPlayView 是 GET（旧版才是 POST）；请求方法错了会直接 405，
+      // 不仅预热失败，播放器首屏仍然拿不到 B 的流。
+      post({ type: 'prefetch', token: token, url: url, method: 'GET', body: '', headers: {} });
       return;
     } else {
       return;

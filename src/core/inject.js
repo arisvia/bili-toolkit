@@ -18,7 +18,13 @@ export function buildHookConfig(token) {
     sandboxEntries: ENDPOINTS.map((ep) => ({ host: ep.host, path: ep.path, method: ep.method })),
     localEntries: LOCAL_PATCH_PATHS.map((p) => ({ host: p.host, path: p.path })),
     timeoutMs: DEFAULTS.timeoutMs,
-    hidePlayinfo: store.isEnabled() && hasCookie(),
+    // 首屏必须先把 SSR 播放数据挡掉，强制播放器走 playurl —— 否则页面会直接
+    // 消费 A 账号的试看数据，代理根本没有机会接管。是否存在 B 账号只影响
+    // 代理是否真的换号（handleRequest 会再检查一次），不影响「先挡 SSR」。
+    hidePlayinfo: store.isEnabled(),
+    // 只把页面上的会员标志改成已开通，需要确实有可借用的 B 账号；没账号时
+    // 不能把正常用户伪造成大会员，否则会显示会员画质但拿不到流。
+    patchVip: store.isPatchUi() && hasCookie(),
     patchUi: store.isPatchUi(),
     prefetch: store.isPrefetch(),
     softLogout: store.isSoftLogout(),
@@ -29,7 +35,8 @@ export function buildHookConfig(token) {
 /** 当前配置（用于 postMessage 推送时的增量更新） */
 export function liveConfig() {
   return {
-    hidePlayinfo: store.isEnabled() && hasCookie(),
+    hidePlayinfo: store.isEnabled(),
+    patchVip: store.isPatchUi() && hasCookie(),
     patchUi: store.isPatchUi(),
     prefetch: store.isPrefetch(),
     softLogout: store.isSoftLogout(),

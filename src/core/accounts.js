@@ -125,9 +125,12 @@ export function pool() {
     return normalizePool(raw);
   }
   // 池子是空的：可能是首次使用，也可能装着一个没有 SESSDATA 的废条目。
-  // 两种情况都再试一次旧数据迁移，之后就落一个空池。
+  // 两种情况都再试一次旧数据迁移。这里**不能**把空池写回存储：
+  // 脚本管理器的 GM 存储是异步注入的，首次 document-start 读取时经常还没就绪，
+  // getPool() 会拿到 null；此时写空池会把用户真实的账号池覆盖掉，导致
+  // 首次进入番剧页一直用当前未开通大会员的账号，刷新后存储就绪才恢复。
+  // 空池只在用户主动增删账号时通过 savePool() 落盘。
   if (migrateLegacy()) return normalizePool(store.getPool());
-  store.setPool(emptyPool());
   return emptyPool();
 }
 

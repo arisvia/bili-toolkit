@@ -257,6 +257,34 @@ console.log('\n[4] 番剧 OGV：csrf 换成 B 的，body 也同步');
   check('body 其余字段保留', seen2.data.includes('ep_id=7') && seen2.data.includes('cid=9'), seen2.data);
 }
 
+console.log('\n[4b] 番剧 OGV：新版 GET playview 也走代理');
+{
+  calls.length = 0;
+  replies.clear();
+  const ctx = makeContext();
+  ctx.GM_setValue('b.cookie', B_COOKIE);
+  let seen = null;
+  replies.set('https://api.bilibili.com/ogv/player/playview', (rec) => {
+    seen = rec;
+    return {
+      text: JSON.stringify({ code: 0, data: { play_video_type: 'whole', video_info: { quality: 127, dash: { video: [], audio: [] } } } })
+    };
+  });
+  const api = await loadProxyModule(ctx);
+  const r = await api.handleRequest({
+    url: 'https://api.bilibili.com/ogv/player/playview?biz_type=ogv&scene=normal&ep_id=7&cid=9&qn=0&fnval=4048&fnver=0&is_qn_trial=1',
+    method: 'GET'
+  });
+  const u = new URL(seen.url);
+  check('GET playview 被端点表接住并用 B 的 Cookie 发出', seen && seen.cookie.includes('SESSDATA=b-secret'));
+  check('qn 从 0 抬到 127', u.searchParams.get('qn') === '127', u.searchParams.get('qn'));
+  check('fnval 保持 4048', u.searchParams.get('fnval') === '4048', u.searchParams.get('fnval'));
+  check('补上 fourk=1', u.searchParams.get('fourk') === '1', u.searchParams.get('fourk'));
+  check('is_qn_trial 被删除', !u.searchParams.has('is_qn_trial'));
+  check('biz_type/scene 保留', u.searchParams.get('biz_type') === 'ogv' && u.searchParams.get('scene') === 'normal');
+  check('返回 OGV 响应', r.passthrough === false && JSON.parse(r.body).data.video_info.quality === 127);
+}
+
 console.log('\n[5] 业务错误 → 回退，不把错误页喂给播放器');
 {
   calls.length = 0;
