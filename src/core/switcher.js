@@ -42,7 +42,13 @@ import {
   resolveBorrow,
   markProbed
 } from './accounts.js';
-import { applyAccount, staleKeysFor, presentIdentityKeys, canWriteCookies, clearBrowserIdentityCookies } from './browser-cookie.js';
+import {
+  applyAccount,
+  staleKeysFor,
+  presentIdentityKeys,
+  canWriteCookies,
+  clearBrowserIdentityCookies
+} from './browser-cookie.js';
 
 const PROGRESS_STORAGE_KEY = '__bili_vip_resume_progress__';
 
@@ -278,9 +284,20 @@ export async function switchLoginTo(id) {
   invalidateBrowserWho(); // 浏览器登录态刚变，30 秒缓存必须立刻作废
   afterSwitch();
   syncLegacyMirror();
-  log.info(TEXT.notify.switchLogged + (target.uname || target.mid || target.id), '写入', applied.written.length, '个字段');
+  log.info(
+    TEXT.notify.switchLogged + (target.uname || target.mid || target.id),
+    '写入',
+    applied.written.length,
+    '个字段'
+  );
 
-  return { ok: true, reason: applied.reason, needReload: true, stale: applied.removed, written: applied.written };
+  return {
+    ok: true,
+    reason: applied.reason,
+    needReload: true,
+    stale: applied.removed,
+    written: applied.written
+  };
 }
 
 /**
@@ -289,7 +306,12 @@ export async function switchLoginTo(id) {
 export async function softLogout() {
   const result = await clearBrowserIdentityCookies();
   if (!result.ok) {
-    return { ok: false, level: result.level, removed: result.removed || [], reason: result.reason || 'failed' };
+    return {
+      ok: false,
+      level: result.level,
+      removed: result.removed || [],
+      reason: result.reason || 'failed'
+    };
   }
   browserWhoCache = { at: Date.now(), who: { mid: '', uname: '', vipStatus: 0 } };
   afterSwitch();
@@ -333,7 +355,8 @@ export function overview() {
   const active = activeAccount();
   const borrow = resolveBorrow();
   const borrowAcc = borrow.account;
-  const cookieMid = typeof document !== 'undefined' ? (parseCookie(document.cookie || '').DedeUserID || '') : '';
+  const cookieMid =
+    typeof document !== 'undefined' ? parseCookie(document.cookie || '').DedeUserID || '' : '';
   const currentBrowserMid = cookieMid || browserWhoCache.who.mid || '';
   const rows = accounts.map((a) => ({
     id: a.id,

@@ -7,13 +7,7 @@ import { store } from '../core/store.js';
 import { NAME } from '../meta.js';
 import { TEXT } from '../core/text.js';
 import { log } from '../core/log.js';
-import {
-  overview,
-  saveAccount,
-  reprobe,
-  switchLoginTo,
-  useAutoBorrowSource
-} from '../core/switcher.js';
+import { overview, saveAccount, reprobe, switchLoginTo, useAutoBorrowSource } from '../core/switcher.js';
 import { strategyLabel } from '../core/session.js';
 import { refreshPanel, openPanel, invalidateAfterSettingsChange } from './panel.js';
 
@@ -74,7 +68,9 @@ async function switchToNextVip() {
   }
   const r = await switchLoginTo(target.id);
   if (!r.ok) {
-    announce(TEXT.notify.switchFail + (r.reason === 'unsupported' ? TEXT.notify.switchUnsupportedShort : r.reason));
+    announce(
+      TEXT.notify.switchFail + (r.reason === 'unsupported' ? TEXT.notify.switchUnsupportedShort : r.reason)
+    );
     return;
   }
   announce(TEXT.notify.switchDone + (target.label || target.uname || target.mid) + TEXT.notify.reloadSoon);
@@ -126,9 +122,15 @@ export function registerMenus() {
     // 旧账号的播放地址还在缓存里，必须失效，否则最多一个 TTL 内仍用旧号的流。
     invalidateAfterSettingsChange();
     announce(
-      TEXT.notify.recheckOk + (r.account.uname || '?') + TEXT.notify.recheckMid + r.account.mid + TEXT.notify.recheckMidEnd +
-        '\n会员：' + (r.account.vipStatus === 1 ? TEXT.notify.vip : TEXT.notify.plain) +
-        '\n' + strategyLabel(r.strategy)
+      TEXT.notify.recheckOk +
+        (r.account.uname || '?') +
+        TEXT.notify.recheckMid +
+        r.account.mid +
+        TEXT.notify.recheckMidEnd +
+        '\n会员：' +
+        (r.account.vipStatus === 1 ? TEXT.notify.vip : TEXT.notify.plain) +
+        '\n' +
+        strategyLabel(r.strategy)
     );
   });
 
@@ -142,4 +144,3 @@ export function registerMenus() {
     notify(TEXT.notify.debug + (next ? TEXT.notify.on : TEXT.notify.off));
   });
 }
-

@@ -76,7 +76,10 @@ function makeContext(seed = {}) {
           if (cb) cb();
         },
         list(details, cb) {
-          cb([...browserCookies].map(([name, v]) => ({ name, value: v.value, domain: v.domain })), null);
+          cb(
+            [...browserCookies].map(([name, v]) => ({ name, value: v.value, domain: v.domain })),
+            null
+          );
         }
       }
     },
@@ -119,14 +122,27 @@ function seedPool(accounts, extra = {}) {
 }
 
 function acc(id, cookie, over = {}) {
-  return { id, cookie, mid: '', uname: '', vipStatus: 0, vipType: 0, checkedAt: Date.now(), addedAt: Date.now(), ...over };
+  return {
+    id,
+    cookie,
+    mid: '',
+    uname: '',
+    vipStatus: 0,
+    vipType: 0,
+    checkedAt: Date.now(),
+    addedAt: Date.now(),
+    ...over
+  };
 }
 
 /* ---------------- 用例 ---------------- */
 
 console.log('\n[1] 账号池基本形状与旧数据迁移');
 {
-  const ctx = makeContext({ 'b.cookie': A_COOKIE, 'b.lastAccount': { mid: '111', uname: 'A', vipStatus: 1, vipType: 2, at: 1000 } });
+  const ctx = makeContext({
+    'b.cookie': A_COOKIE,
+    'b.lastAccount': { mid: '111', uname: 'A', vipStatus: 1, vipType: 2, at: 1000 }
+  });
   const api = await load('src/core/accounts.js', ctx);
   const list = api.list();
   check('旧单账号被收编进池子', list.length === 1, list.length);
@@ -238,17 +254,28 @@ console.log('\n[6] 池内都没有大会员时不乱挑');
 console.log('\n[7] 池结构自愈：悬空 id、无 SESSDATA 条目');
 {
   const ctx = makeContext(
-    seedPool([
-      acc('good', A_COOKIE, { mid: '111' }),
-      acc('nosess', 'buvid3=x; DedeUserID=9'), // 没有 SESSDATA 的废条目
-      acc('good', B_COOKIE) // 重复 id
-    ], { activeId: 'nosess', borrowId: 'ghost' })
+    seedPool(
+      [
+        acc('good', A_COOKIE, { mid: '111' }),
+        acc('nosess', 'buvid3=x; DedeUserID=9'), // 没有 SESSDATA 的废条目
+        acc('good', B_COOKIE) // 重复 id
+      ],
+      { activeId: 'nosess', borrowId: 'ghost' }
+    )
   );
   const api = await load('src/core/accounts.js', ctx);
   const list = api.list();
-  check('没有 SESSDATA 的条目被丢弃', !list.some((a) => a.id === 'nosess'), list.map((a) => a.id));
+  check(
+    '没有 SESSDATA 的条目被丢弃',
+    !list.some((a) => a.id === 'nosess'),
+    list.map((a) => a.id)
+  );
   check('重复 id 只留一个', list.filter((a) => a.id === 'good').length === 1);
-  check('activeId 指向已删除的条目时被重置到有效值', list.some((a) => a.id === api.pool().activeId), api.pool().activeId);
+  check(
+    'activeId 指向已删除的条目时被重置到有效值',
+    list.some((a) => a.id === api.pool().activeId),
+    api.pool().activeId
+  );
   check('悬空的 borrowId 被清空', api.pool().borrowId === '');
 }
 
@@ -307,11 +334,24 @@ console.log('\n[10] 切换登录态：SESSDATA / bili_jct / sid 一起换');
   check('sid 同样不能标 HttpOnly（站点上本就不是）', bc.get('sid').httpOnly !== true, bc.get('sid'));
   // bili_jct 必须是**可读**的：前端投币/点赞/评论的 csrf 参数从 document.cookie 读，
   // 写成 HttpOnly 会让这些请求带空 csrf，服务端一律 -111。
-  check('bili_jct 不能标 HttpOnly（否则投币/点赞/评论 -111）', bc.get('bili_jct').httpOnly !== true, bc.get('bili_jct'));
+  check(
+    'bili_jct 不能标 HttpOnly（否则投币/点赞/评论 -111）',
+    bc.get('bili_jct').httpOnly !== true,
+    bc.get('bili_jct')
+  );
   check('DedeUserID 不该被标 HttpOnly（站点本来就不是）', bc.get('DedeUserID').httpOnly !== true);
-  check('SESSDATA 包含持久有效期(非 Session Cookie)', bc.get('SESSDATA').expirationDate > Math.floor(Date.now() / 1000));
-  check('bili_jct 包含持久有效期(非 Session Cookie)', bc.get('bili_jct').expirationDate > Math.floor(Date.now() / 1000));
-  check('DedeUserID 包含持久有效期(非 Session Cookie)', bc.get('DedeUserID').expirationDate > Math.floor(Date.now() / 1000));
+  check(
+    'SESSDATA 包含持久有效期(非 Session Cookie)',
+    bc.get('SESSDATA').expirationDate > Math.floor(Date.now() / 1000)
+  );
+  check(
+    'bili_jct 包含持久有效期(非 Session Cookie)',
+    bc.get('bili_jct').expirationDate > Math.floor(Date.now() / 1000)
+  );
+  check(
+    'DedeUserID 包含持久有效期(非 Session Cookie)',
+    bc.get('DedeUserID').expirationDate > Math.floor(Date.now() / 1000)
+  );
   // B_COOKIE 自带 sid，所以不该进删除名单；下面换到没有 sid 的 C 才验证删除路径
   check('目标账号有的字段不进删除名单', !r.stale.includes('sid') && !r.stale.includes('bili_jct'), r.stale);
 
@@ -319,7 +359,9 @@ console.log('\n[10] 切换登录态：SESSDATA / bili_jct / sid 一起换');
   ctx.__browserCookies.clear();
   const added2 = accApi.addAccount('SESSDATA=c-sess; DedeUserID=333; bili_jct=c-csrf', { mid: '333' });
   const r2 = await sw.switchLoginTo(added2.id);
-  check('新号没有的旧字段被删掉（sid 不残留）', !ctx.__browserCookies.has('sid'), [...ctx.__browserCookies.keys()]);
+  check('新号没有的旧字段被删掉（sid 不残留）', !ctx.__browserCookies.has('sid'), [
+    ...ctx.__browserCookies.keys()
+  ]);
   check('删除名单里确实有 sid', r2.stale.includes('sid'), r2.stale);
   check('新号有值时不会被误删', ctx.__browserCookies.get('bili_jct').value === 'c-csrf');
 }
@@ -346,6 +388,45 @@ console.log('\n[10b] Violentmonkey 无 HttpOnly 权限时退回非 HttpOnly 写 
   check('VM 无权限时 SESSDATA 以非 HttpOnly 写入', ctx.__browserCookies.get('SESSDATA').httpOnly === false);
 }
 
+console.log('\n[10c] 未登录态下若管理器支持 HttpOnly，不应误降级为非 HttpOnly');
+{
+  const ctx = makeContext(seedPool([], {}));
+  ctx.GM_info = { scriptHandler: 'Violentmonkey', version: '2.50.0' };
+  ctx.GM.cookie.list = async () =>
+    [...ctx.__browserCookies].map(([name, v]) => ({
+      name,
+      value: v.value,
+      domain: v.domain,
+      httpOnly: !!v.httpOnly
+    }));
+
+  const accApi = await load('src/core/accounts.js', ctx);
+  const added = accApi.addAccount(B_COOKIE, { mid: '222', uname: 'B', vipStatus: 1 });
+  const sw = await load('src/core/switcher.js', ctx);
+  const r = await sw.switchLoginTo(added.id);
+
+  check('切换成功', r.ok === true, r.reason);
+  check('SESSDATA 保持 HttpOnly', ctx.__browserCookies.get('SESSDATA').httpOnly === true);
+}
+
+console.log('\n[10d] SESSDATA 写入后读回始终不一致时应明确失败且不删旧字段');
+{
+  const ctx = makeContext(
+    seedPool([acc('idA', A_COOKIE, { mid: '111', uname: 'A', vipStatus: 0 })], { activeId: 'idA' })
+  );
+  // 模拟管理器静默丢弃所有 SESSDATA 写入
+  ctx.GM.cookie.list = async () => [
+    { name: 'SESSDATA', value: 'a-sess', domain: '.bilibili.com', httpOnly: true }
+  ];
+  const accApi = await load('src/core/accounts.js', ctx);
+  const added = accApi.addAccount('SESSDATA=c-sess; DedeUserID=333; bili_jct=c-csrf', { mid: '333' });
+  const sw = await load('src/core/switcher.js', ctx);
+  const r = await sw.switchLoginTo(added.id);
+
+  check('读回不一致时返回失败', r.ok === false, r);
+  check('报错信息包含读回不一致说明', /读回不一致/.test(r.reason), r.reason);
+}
+
 console.log('\n[11] 设备字段不会被切号误删（回归：曾把设备字段写进白名单）');
 {
   // 场景：浏览器里已有设备字段（属于这台设备），账号池里存的是最小字段集。
@@ -361,7 +442,11 @@ console.log('\n[11] 设备字段不会被切号误删（回归：曾把设备字
   const r = await sw.switchLoginTo(added.id);
   check('切换成功', r.ok === true, r.reason);
   check('设备字段不在删除名单里', !r.stale.includes('buvid3') && !r.stale.includes('bili_ticket'), r.stale);
-  check('浏览器里的设备字段没被动过', !ctx.__browserCookies.has('buvid3') && !ctx.__browserCookies.has('bili_ticket'), [...ctx.__browserCookies.keys()]);
+  check(
+    '浏览器里的设备字段没被动过',
+    !ctx.__browserCookies.has('buvid3') && !ctx.__browserCookies.has('bili_ticket'),
+    [...ctx.__browserCookies.keys()]
+  );
   check('身份字段照常写入', ctx.__browserCookies.get('SESSDATA').value === 'b-sess');
 
   // 反向：即使账号自己存了设备字段，切号时也不写进浏览器 ——
@@ -373,7 +458,9 @@ console.log('\n[11] 设备字段不会被切号误删（回归：曾把设备字
   const added2 = accApi2.addAccount(B_WITH_DEVICE, { mid: '222', vipStatus: 1 });
   const sw2 = await load('src/core/switcher.js', ctx2);
   await sw2.switchLoginTo(added2.id);
-  check('账号自带的设备字段也不写进浏览器', !ctx2.__browserCookies.has('buvid3'), [...ctx2.__browserCookies.keys()]);
+  check('账号自带的设备字段也不写进浏览器', !ctx2.__browserCookies.has('buvid3'), [
+    ...ctx2.__browserCookies.keys()
+  ]);
   check('身份字段仍全部写入', ctx2.__browserCookies.has('bili_jct') && ctx2.__browserCookies.has('sid'));
 }
 
@@ -467,7 +554,11 @@ console.log('\n[14] 浏览器已登录时：能认人，认不到 Cookie');
   // 但 SESSDATA 是 HttpOnly，脚本读不到，所以「认人」≠「能入池」。
   const ctx = makeContext();
   const navText = JSON.stringify({ code: 0, data: { mid: 111, uname: '登录着的号', vipStatus: 1 } });
-  ctx.GM_xmlhttpRequest = (opts) => setTimeout(() => opts.onload({ status: 200, statusText: 'OK', responseText: navText, responseHeaders: '' }), 0);
+  ctx.GM_xmlhttpRequest = (opts) =>
+    setTimeout(
+      () => opts.onload({ status: 200, statusText: 'OK', responseText: navText, responseHeaders: '' }),
+      0
+    );
 
   const sess = await load('src/core/session.js', ctx);
   const who = await sess.identifyBrowserAccount();
@@ -475,14 +566,22 @@ console.log('\n[14] 浏览器已登录时：能认人，认不到 Cookie');
   check('也能读出它的会员状态', who.vipStatus === 1);
 
   // 认到人 ≠ 拿得到 Cookie：document.cookie 里没有 SESSDATA
-  check('浏览器 Cookie 里确实没有 SESSDATA（所以无法自动入池）', !(await load('src/core/cookie.js', ctx)).parseCookie(ctx.document.cookie).SESSDATA, ctx.document.cookie);
+  check(
+    '浏览器 Cookie 里确实没有 SESSDATA（所以无法自动入池）',
+    !(await load('src/core/cookie.js', ctx)).parseCookie(ctx.document.cookie).SESSDATA,
+    ctx.document.cookie
+  );
 
   // 该号已在池中 → overviewAsync 直接判定 inPool，凭证现成
   const ctx2 = makeContext(
     seedPool([acc('idA', A_COOKIE, { mid: '111', uname: '登录着的号', vipStatus: 0 })], { activeId: 'idA' })
   );
   ctx2.document.cookie = 'buvid3=dev3';
-  ctx2.GM_xmlhttpRequest = (opts) => setTimeout(() => opts.onload({ status: 200, statusText: 'OK', responseText: navText, responseHeaders: '' }), 0);
+  ctx2.GM_xmlhttpRequest = (opts) =>
+    setTimeout(
+      () => opts.onload({ status: 200, statusText: 'OK', responseText: navText, responseHeaders: '' }),
+      0
+    );
   const accApi = await load('src/core/accounts.js', ctx2);
   const sw = await load('src/core/switcher.js', ctx2);
   accApi.pool();
@@ -496,7 +595,11 @@ console.log('\n[14] 浏览器已登录时：能认人，认不到 Cookie');
   // 等于循环论证。改成运行时探测后，两种环境都能正确处理。
   const ctx3 = makeContext();
   ctx3.document.cookie = 'SESSDATA=auto-import-sess; DedeUserID=111; bili_jct=auto-jct';
-  ctx3.GM_xmlhttpRequest = (opts) => setTimeout(() => opts.onload({ status: 200, statusText: 'OK', responseText: navText, responseHeaders: '' }), 0);
+  ctx3.GM_xmlhttpRequest = (opts) =>
+    setTimeout(
+      () => opts.onload({ status: 200, statusText: 'OK', responseText: navText, responseHeaders: '' }),
+      0
+    );
   const accApi3 = await load('src/core/accounts.js', ctx3);
   accApi3.pool();
   const sw3 = await load('src/core/switcher.js', ctx3);
@@ -517,7 +620,11 @@ console.log('\n[14] 浏览器已登录时：能认人，认不到 Cookie');
   // 读不到 SESSDATA → 明确要求手动复制，且**不**拼一个假 Cookie 进来
   const ctx3b = makeContext();
   ctx3b.document.cookie = 'buvid3=dev3; DedeUserID=111';
-  ctx3b.GM_xmlhttpRequest = (opts) => setTimeout(() => opts.onload({ status: 200, statusText: 'OK', responseText: navText, responseHeaders: '' }), 0);
+  ctx3b.GM_xmlhttpRequest = (opts) =>
+    setTimeout(
+      () => opts.onload({ status: 200, statusText: 'OK', responseText: navText, responseHeaders: '' }),
+      0
+    );
   const accApi3b = await load('src/core/accounts.js', ctx3b);
   accApi3b.pool();
   const sw3b = await load('src/core/switcher.js', ctx3b);
@@ -547,8 +654,14 @@ console.log('\n[15] browserMismatch：池里记的当前号与浏览器实际登
   const nav = JSON.stringify({ code: 0, data: { mid: 999, uname: '实际登录的号', vipStatus: 1 } });
   const navPooled = JSON.stringify({ code: 0, data: { mid: 111, uname: '池里记的号', vipStatus: 1 } });
   const mk = () => {
-    const c = makeContext(seedPool([acc('idA', A_COOKIE, { mid: '111', uname: '池里记的号' })], { activeId: 'idA' }));
-    c.GM_xmlhttpRequest = (o) => setTimeout(() => o.onload({ status: 200, statusText: 'OK', responseText: nav, responseHeaders: '' }), 0);
+    const c = makeContext(
+      seedPool([acc('idA', A_COOKIE, { mid: '111', uname: '池里记的号' })], { activeId: 'idA' })
+    );
+    c.GM_xmlhttpRequest = (o) =>
+      setTimeout(
+        () => o.onload({ status: 200, statusText: 'OK', responseText: nav, responseHeaders: '' }),
+        0
+      );
     return c;
   };
 
@@ -562,8 +675,14 @@ console.log('\n[15] browserMismatch：池里记的当前号与浏览器实际登
   check('不影响 inPool / 借用逻辑', o1.inPool === false && o1.borrowId === 'idA', o1);
 
   // 2) 浏览器实际就是池里记的那个号 → 不该报
-  const c2 = makeContext(seedPool([acc('idA', A_COOKIE, { mid: '111', uname: '池里记的号' })], { activeId: 'idA' }));
-  c2.GM_xmlhttpRequest = (o) => setTimeout(() => o.onload({ status: 200, statusText: 'OK', responseText: navPooled, responseHeaders: '' }), 0);
+  const c2 = makeContext(
+    seedPool([acc('idA', A_COOKIE, { mid: '111', uname: '池里记的号' })], { activeId: 'idA' })
+  );
+  c2.GM_xmlhttpRequest = (o) =>
+    setTimeout(
+      () => o.onload({ status: 200, statusText: 'OK', responseText: navPooled, responseHeaders: '' }),
+      0
+    );
   const a2 = await load('src/core/accounts.js', c2);
   a2.pool();
   const o2 = await (await load('src/core/switcher.js', c2)).overviewAsync();
@@ -588,7 +707,8 @@ console.log('\n[16] 防串号检查不能误伤「导入当前登录账号」');
   // 1) 待测 Cookie == 浏览器当前 Cookie → 应判为成功
   const ctxA = makeContext();
   ctxA.document.cookie = 'SESSDATA=same-sess; DedeUserID=111; bili_jct=j';
-  ctxA.GM_xmlhttpRequest = (o) => setTimeout(() => o.onload({ status: 200, statusText: 'OK', responseText: nav, responseHeaders: '' }), 0);
+  ctxA.GM_xmlhttpRequest = (o) =>
+    setTimeout(() => o.onload({ status: 200, statusText: 'OK', responseText: nav, responseHeaders: '' }), 0);
   const sA = await load('src/core/session.js', ctxA);
   const rA = await sA.probeIdentity('SESSDATA=same-sess; DedeUserID=111; bili_jct=j', { adopt: false });
   check('导入当前号不会被误判为「没送出去」', rA.ok === true, rA.reason);
@@ -597,7 +717,8 @@ console.log('\n[16] 防串号检查不能误伤「导入当前登录账号」');
   // 2) 待测 Cookie 是**另一个**号，但服务端仍返回页面的 mid → 仍要判为串号
   const ctxB = makeContext();
   ctxB.document.cookie = 'SESSDATA=browser-sess; DedeUserID=111';
-  ctxB.GM_xmlhttpRequest = (o) => setTimeout(() => o.onload({ status: 200, statusText: 'OK', responseText: nav, responseHeaders: '' }), 0);
+  ctxB.GM_xmlhttpRequest = (o) =>
+    setTimeout(() => o.onload({ status: 200, statusText: 'OK', responseText: nav, responseHeaders: '' }), 0);
   const sB = await load('src/core/session.js', ctxB);
   const rB = await sB.probeIdentity('SESSDATA=other-sess; DedeUserID=222; bili_jct=j', { adopt: false });
   check('另一个号仍会被防串号检查拦下', rB.ok === false, rB);
@@ -607,17 +728,23 @@ console.log('\n[16] 防串号检查不能误伤「导入当前登录账号」');
   //    但待测 Cookie 明确是当前号（DedeUserID=111）→ 应成功，且不伪造策略认证
   const ctxC = makeContext({ 'b.strategy': 2 });
   ctxC.document.cookie = 'buvid3=page-dev3; DedeUserID=111'; // 无 SESSDATA
-  ctxC.GM_xmlhttpRequest = (o) => setTimeout(() => o.onload({ status: 200, statusText: 'OK', responseText: nav, responseHeaders: '' }), 0);
+  ctxC.GM_xmlhttpRequest = (o) =>
+    setTimeout(() => o.onload({ status: 200, statusText: 'OK', responseText: nav, responseHeaders: '' }), 0);
   const sC = await load('src/core/session.js', ctxC);
   const rC = await sC.probeIdentity('SESSDATA=real-a-sess; DedeUserID=111; bili_jct=j', { adopt: false });
   check('真实浏览器 HttpOnly 环境下手动导入当前号成功', rC.ok === true, rC.reason);
   check('认出当前号 mid=111', rC.account && rC.account.mid === '111');
-  check('同号验证不持久化发送策略（避免伪认证）', ctxC.__store.get('b.strategy') === 2, ctxC.__store.get('b.strategy'));
+  check(
+    '同号验证不持久化发送策略（避免伪认证）',
+    ctxC.__store.get('b.strategy') === 2,
+    ctxC.__store.get('b.strategy')
+  );
 
   // 4) 真实浏览器 HttpOnly 环境下，待测 Cookie 是另一个号（DedeUserID=222）→ 仍被正确拦截
   const ctxD = makeContext();
   ctxD.document.cookie = 'buvid3=page-dev3; DedeUserID=111';
-  ctxD.GM_xmlhttpRequest = (o) => setTimeout(() => o.onload({ status: 200, statusText: 'OK', responseText: nav, responseHeaders: '' }), 0);
+  ctxD.GM_xmlhttpRequest = (o) =>
+    setTimeout(() => o.onload({ status: 200, statusText: 'OK', responseText: nav, responseHeaders: '' }), 0);
   const sD = await load('src/core/session.js', ctxD);
   const rD = await sD.probeIdentity('SESSDATA=real-b-sess; DedeUserID=222; bili_jct=j', { adopt: false });
   check('真实浏览器 HttpOnly 环境下另一个号串号仍被拦截', rD.ok === false, rD);
@@ -625,14 +752,21 @@ console.log('\n[16] 防串号检查不能误伤「导入当前登录账号」');
 
 console.log('\n[17] 旧版单账号数据的镜像与清理');
 {
-  const ctx = makeContext({ 'b.cookie': A_COOKIE, 'b.lastAccount': { mid: '111', uname: 'A', vipStatus: 1, at: 5 } });
+  const ctx = makeContext({
+    'b.cookie': A_COOKIE,
+    'b.lastAccount': { mid: '111', uname: 'A', vipStatus: 1, at: 5 }
+  });
   const api = await load('src/core/accounts.js', ctx);
   const sess = await load('src/core/session.js', ctx);
 
   api.pool(); // 触发迁移
   api.markProbed(api.pool().activeId, { mid: '111', uname: 'A', vipStatus: 1 });
   sess.syncLegacyMirror();
-  check('镜像回写的 Cookie 仍可用（旧版脚本降级不丢设置）', ctx.__store.get('b.cookie') === A_COOKIE, ctx.__store.get('b.cookie'));
+  check(
+    '镜像回写的 Cookie 仍可用（旧版脚本降级不丢设置）',
+    ctx.__store.get('b.cookie') === A_COOKIE,
+    ctx.__store.get('b.cookie')
+  );
   check('身份也一并镜像', (ctx.__store.get('b.lastAccount') || {}).uname === 'A');
 
   api.clearPool();
@@ -657,7 +791,10 @@ console.log('\n[18] overview 与代理取值同源');
   const o = sw.overview();
   check('借用的不是当前登录号', o.borrowedFromOther === true);
   check('csrf 来自借用源', o.hasCsrf === true);
-  check('脱敏摘要不含完整 SESSDATA', !o.effectiveMasked.includes('b-sess') && o.effectiveMasked.includes('b-sess'.slice(0, 4)));
+  check(
+    '脱敏摘要不含完整 SESSDATA',
+    !o.effectiveMasked.includes('b-sess') && o.effectiveMasked.includes('b-sess'.slice(0, 4))
+  );
   check('session 取到的正是借用源 Cookie', sess.getEffectiveCookie().includes('SESSDATA=b-sess'));
   check('csrf 取的是 B 的', sess.getBCsrf() === 'b-csrf', sess.getBCsrf());
   check('指纹随借用源变化', sess.fingerprint() === accApi.fingerprintId(B_COOKIE));
@@ -701,9 +838,7 @@ console.log('\n[19] 软登出：仅清空浏览器本地会话，保留账号池
   check('登回后浏览器 SESSDATA 恢复', ctx.__browserCookies.get('SESSDATA')?.value === 'a-sess');
 
   // 管理器无 Cookie 写入/删除特权时：软登出如实返回失败，绝不伪造成功
-  const ctxNoPriv = makeContext(
-    seedPool([acc('idA', A_COOKIE, { mid: '111' })], { activeId: 'idA' })
-  );
+  const ctxNoPriv = makeContext(seedPool([acc('idA', A_COOKIE, { mid: '111' })], { activeId: 'idA' }));
   delete ctxNoPriv.GM_cookie;
   delete ctxNoPriv.GM;
   delete ctxNoPriv.GM_setCookie;
@@ -714,10 +849,13 @@ console.log('\n[19] 软登出：仅清空浏览器本地会话，保留账号池
 console.log('\n[20] 账号凭据失效标记 (markInvalid) 与状态隔离');
 {
   const ctx = makeContext(
-    seedPool([
-      acc('idA', A_COOKIE, { mid: '111', uname: '普通号' }),
-      acc('idB', B_COOKIE, { mid: '222', uname: '大会员号', vipStatus: 1, vipType: 2 })
-    ], { activeId: 'idA' })
+    seedPool(
+      [
+        acc('idA', A_COOKIE, { mid: '111', uname: '普通号' }),
+        acc('idB', B_COOKIE, { mid: '222', uname: '大会员号', vipStatus: 1, vipType: 2 })
+      ],
+      { activeId: 'idA' }
+    )
   );
   const accApi = await load('src/core/accounts.js', ctx);
   const sw = await load('src/core/switcher.js', ctx);
@@ -752,9 +890,7 @@ console.log('\n[21] 切号播放进度记忆与热恢复');
 {
   const sessionMap = new Map();
   const mockVideo = { currentTime: 156.4, duration: 300, paused: false, play: () => Promise.resolve() };
-  const ctx = makeContext(
-    seedPool([acc('idB', B_COOKIE, { mid: '222' })], { activeId: 'idA' })
-  );
+  const ctx = makeContext(seedPool([acc('idB', B_COOKIE, { mid: '222' })], { activeId: 'idA' }));
   ctx.sessionStorage = {
     setItem: (k, v) => sessionMap.set(k, String(v)),
     getItem: (k) => sessionMap.get(k) || null,
@@ -796,7 +932,9 @@ console.log('\n[22] 当前登录号 A 与借用号 B 不同时，切到 C 仍按
 console.log('\n[23] 加密备份导出与安全合并导入');
 {
   const ctx1 = makeContext(
-    seedPool([acc('idB', B_COOKIE, { mid: '222', uname: '大会员B', vipStatus: 1, label: '我的主力VIP' })], { activeId: 'idB' })
+    seedPool([acc('idB', B_COOKIE, { mid: '222', uname: '大会员B', vipStatus: 1, label: '我的主力VIP' })], {
+      activeId: 'idB'
+    })
   );
   ctx1.crypto = globalThis.crypto;
   ctx1.btoa = globalThis.btoa;
@@ -806,7 +944,10 @@ console.log('\n[23] 加密备份导出与安全合并导入');
   ctx1.Uint8Array = globalThis.Uint8Array;
   const sw1 = await load('src/core/switcher.js', ctx1);
   const exported = await sw1.exportEncryptedBackup('secret-2026');
-  check('导出加密备份成功', exported.ok === true && exported.count === 1 && !exported.text.includes('b-sess'));
+  check(
+    '导出加密备份成功',
+    exported.ok === true && exported.count === 1 && !exported.text.includes('b-sess')
+  );
 
   const ctx2 = makeContext({});
   ctx2.crypto = globalThis.crypto;
@@ -819,7 +960,62 @@ console.log('\n[23] 加密备份导出与安全合并导入');
   const imported = await sw2.importEncryptedBackup(exported.text, 'secret-2026', { applySettings: true });
   check('新环境成功解密并导入 1 个账号', imported.ok === true && imported.added === 1, imported);
   const o2 = sw2.overview();
-  check('导入账号保留备注名与大会员状态', o2.rows.length === 1 && o2.rows[0].label === '我的主力VIP' && o2.rows[0].vip === true, o2.rows);
+  check(
+    '导入账号保留备注名与大会员状态',
+    o2.rows.length === 1 && o2.rows[0].label === '我的主力VIP' && o2.rows[0].vip === true,
+    o2.rows
+  );
+}
+
+console.log('\n[24] 扫码登录携带 source=main_web 与 b_ret，且风控获取失败不永久缓存');
+{
+  const ctx = makeContext({});
+  const requestedUrls = [];
+  let tokenCalls = 0;
+  ctx.unsafeWindow = {
+    SecureCollectSDK: {
+      async getEnvToken() {
+        tokenCalls++;
+        if (tokenCalls === 1) throw new Error('temporary-fail');
+        return 'RISK_TOKEN_OK';
+      }
+    }
+  };
+  ctx.GM_xmlhttpRequest = (opts) => {
+    requestedUrls.push(opts.url);
+    if (opts.url.includes('/qrcode/generate')) {
+      opts.onload({
+        status: 200,
+        responseText: JSON.stringify({
+          code: 0,
+          data: { url: 'https://account.bilibili.com/h5/scan?k=1', qrcode_key: 'KEY_1' }
+        }),
+        responseHeaders: ''
+      });
+      return;
+    }
+    opts.onload({
+      status: 200,
+      responseText: JSON.stringify({ code: 0, data: { code: 86101, message: '未扫码' } }),
+      responseHeaders: ''
+    });
+  };
+  const qr = await load('src/core/qr-login.js', ctx);
+  const gen = await qr.fetchQrCode();
+  check('生成二维码成功', gen.ok === true && gen.qrcodeKey === 'KEY_1');
+  check('生成请求带 source=main_web', requestedUrls[0].includes('source=main_web'), requestedUrls[0]);
+
+  const poll1 = await qr.pollQrCode('KEY_1');
+  check('首次风控失败仍正常轮询不阻断', poll1.ok === true && poll1.state === 'waiting');
+  check('首次失败时不拼空 b_ret', !requestedUrls[1].includes('b_ret='), requestedUrls[1]);
+
+  const poll2 = await qr.pollQrCode('KEY_1');
+  check(
+    '第二次轮询重试风控并成功带上 b_ret',
+    poll2.ok === true && requestedUrls[2].includes('b_ret=RISK_TOKEN_OK'),
+    requestedUrls[2]
+  );
+  check('轮询请求带 source=main_web', requestedUrls[2].includes('source=main_web'), requestedUrls[2]);
 }
 
 if (failed) {

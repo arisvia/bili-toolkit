@@ -5,10 +5,38 @@
  */
 
 export const REGION_MODES = {
-  off: { id: 'off', label: '不干预', ipRegion: null, areaLimit: null, areaLabel: null, hint: '完全沿用 B 站返回的区域' },
-  hkmo: { id: 'hkmo', label: '港澳台', ipRegion: 'HK', areaLimit: 0, areaLabel: '港澳台', hint: '按境外/港澳台形态渲染，屏蔽地区限制提示' },
-  tw: { id: 'tw', label: '台湾', ipRegion: 'TW', areaLimit: 0, areaLabel: '台湾', hint: '按台湾地区形态渲染' },
-  cn: { id: 'cn', label: '中国大陆', ipRegion: 'CN', areaLimit: 0, areaLabel: '中国大陆', hint: '按中国大陆形态渲染' }
+  off: {
+    id: 'off',
+    label: '不干预',
+    ipRegion: null,
+    areaLimit: null,
+    areaLabel: null,
+    hint: '完全沿用 B 站返回的区域'
+  },
+  hkmo: {
+    id: 'hkmo',
+    label: '港澳台',
+    ipRegion: 'HK',
+    areaLimit: 0,
+    areaLabel: '港澳台',
+    hint: '按境外/港澳台形态渲染，屏蔽地区限制提示'
+  },
+  tw: {
+    id: 'tw',
+    label: '台湾',
+    ipRegion: 'TW',
+    areaLimit: 0,
+    areaLabel: '台湾',
+    hint: '按台湾地区形态渲染'
+  },
+  cn: {
+    id: 'cn',
+    label: '中国大陆',
+    ipRegion: 'CN',
+    areaLimit: 0,
+    areaLabel: '中国大陆',
+    hint: '按中国大陆形态渲染'
+  }
 };
 
 export const DEFAULT_REGION_MODE = 'off';

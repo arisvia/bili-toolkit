@@ -96,9 +96,10 @@ export function parseCookieText(raw) {
     if (Object.keys(fields).length) {
       return {
         fields,
-        format: wide > 0
-          ? `DevTools 表格文本（${Object.keys(fields).length} 行 × ${12} 列，已只取 Name/Value）`
-          : '表格文本（两列）'
+        format:
+          wide > 0
+            ? `DevTools 表格文本（${Object.keys(fields).length} 行 × ${12} 列，已只取 Name/Value）`
+            : '表格文本（两列）'
       };
     }
   }

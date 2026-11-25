@@ -17,7 +17,12 @@
     return;
   }
   var ck = document.cookie || '';
-  var names = ck.split(';').map(function (s) { return s.trim().split('=')[0]; }).filter(Boolean);
+  var names = ck
+    .split(';')
+    .map(function (s) {
+      return s.trim().split('=')[0];
+    })
+    .filter(Boolean);
   var m = ck.match(/(?:^|;\s*)SESSDATA=([^;]*)/);
   var out = {
     host: location.hostname,

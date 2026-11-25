@@ -17,39 +17,109 @@ const QR_POLL_URL = 'https://passport.bilibili.com/x/passport-login/web/qrcode/p
 const QR_SOURCE = 'main_web';
 const QR_SDK_URL = 'https://s1.hdslb.com/bfs/seed/jinkela/short/minntaki-wasm-sdk/bili-sc-sdk.umd.js';
 
-let qrRiskTokenPromise = null;
+const QR_SDK_TIMEOUT_MS = 5000;
+const QR_TOKEN_TTL_MS = 60 * 1000;
+
+let sdkLoadPromise = null;
+let cachedRiskToken = '';
+let cachedRiskTokenAt = 0;
+let sdkPolicy = null;
+
+function toTrustedScriptUrl(url) {
+  if (
+    typeof window === 'undefined' ||
+    !window.trustedTypes ||
+    typeof window.trustedTypes.createPolicy !== 'function'
+  ) {
+    return url;
+  }
+  try {
+    if (!sdkPolicy) {
+      sdkPolicy = window.trustedTypes.createPolicy('bili-toolkit#sdk', {
+        createScriptURL: (u) => (u === QR_SDK_URL ? u : '')
+      });
+    }
+    return sdkPolicy.createScriptURL(url);
+  } catch {
+    return url;
+  }
+}
+
+function getPageWindow() {
+  try {
+    if (typeof unsafeWindow !== 'undefined' && unsafeWindow) return unsafeWindow;
+  } catch {
+    /* ignore */
+  }
+  return typeof window !== 'undefined' ? window : null;
+}
+
+function loadRiskSdk(pageWindow) {
+  if (pageWindow.SecureCollectSDK) return Promise.resolve(pageWindow.SecureCollectSDK);
+  if (sdkLoadPromise) return sdkLoadPromise;
+  if (typeof document === 'undefined') return Promise.resolve(null);
+
+  sdkLoadPromise = new Promise((resolve, reject) => {
+    const root = document.head || document.documentElement;
+    if (!root) {
+      reject(new Error('DOM 未就绪'));
+      return;
+    }
+    const s = document.createElement('script');
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('安全组件加载超时'));
+    }, QR_SDK_TIMEOUT_MS);
+    const cleanup = () => {
+      clearTimeout(timer);
+      s.onload = null;
+      s.onerror = null;
+    };
+    s.src = toTrustedScriptUrl(QR_SDK_URL);
+    s.async = true;
+    s.onload = () => {
+      cleanup();
+      resolve(pageWindow.SecureCollectSDK || null);
+    };
+    s.onerror = () => {
+      cleanup();
+      reject(new Error('安全组件加载失败'));
+    };
+    root.appendChild(s);
+  }).catch(() => {
+    sdkLoadPromise = null;
+    return null;
+  });
+
+  return sdkLoadPromise;
+}
 
 /**
  * 读取页面环境里的风控 token（b_ret）。
  *
- * 2025 版 passport 扫码流程由 bili-sc-sdk 生成 b_ret 并随 generate/poll 一起提交；
- * 缺少它时服务端会在手机确认后把 qrcode_key 判成 86038（已失效），
- * 表现就是「扫完二维码马上过期，账号加不进来」。
+ * 2025 版 passport 扫码流程由 bili-sc-sdk 生成 b_ret 并随 poll 一起提交；
+ * 缺少它时服务端会在手机确认后把 qrcode_key 判成 86038（已失效）。
+ * 优先复用页面已加载的 SDK；仅缓存成功获取的短有效期令牌，失败可自动重试。
  */
 async function getQrRiskToken() {
-  if (qrRiskTokenPromise) return qrRiskTokenPromise;
-  qrRiskTokenPromise = (async () => {
-    try {
-      const pageWindow = typeof unsafeWindow !== 'undefined' && unsafeWindow ? unsafeWindow : window;
-      if (!pageWindow.SecureCollectSDK) {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = QR_SDK_URL;
-          s.async = true;
-          s.onload = resolve;
-          s.onerror = () => reject(new Error('安全组件加载失败'));
-          (document.head || document.documentElement).appendChild(s);
-        });
-      }
-      const sdk = pageWindow.SecureCollectSDK;
-      if (!sdk || typeof sdk.getEnvToken !== 'function') return '';
-      const token = await sdk.getEnvToken();
-      return token ? String(token) : '';
-    } catch {
-      return '';
+  if (cachedRiskToken && Date.now() - cachedRiskTokenAt < QR_TOKEN_TTL_MS) {
+    return cachedRiskToken;
+  }
+  try {
+    const pageWindow = getPageWindow();
+    if (!pageWindow) return '';
+    const sdk = await loadRiskSdk(pageWindow);
+    if (!sdk || typeof sdk.getEnvToken !== 'function') return '';
+    const token = await sdk.getEnvToken();
+    const text = token ? String(token) : '';
+    if (text) {
+      cachedRiskToken = text;
+      cachedRiskTokenAt = Date.now();
     }
-  })();
-  return qrRiskTokenPromise;
+    return text;
+  } catch {
+    return '';
+  }
 }
 
 function qrQuery(params) {
@@ -99,7 +169,10 @@ export function extractCookies(urlStr, headersRaw) {
     const i = line.indexOf(':');
     if (i <= 0) continue;
     if (line.slice(0, i).trim().toLowerCase() === 'set-cookie') {
-      const part = line.slice(i + 1).trim().split(';')[0];
+      const part = line
+        .slice(i + 1)
+        .trim()
+        .split(';')[0];
       const eq = part.indexOf('=');
       if (eq > 0) map.set(part.slice(0, eq).trim(), part.slice(eq + 1).trim());
     }

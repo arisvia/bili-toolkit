@@ -31,6 +31,18 @@ function randomToken() {
   return hex;
 }
 
+function isBangumiPlayPage() {
+  try {
+    return (
+      typeof location !== 'undefined' &&
+      typeof location.pathname === 'string' &&
+      location.pathname.startsWith('/bangumi/play/')
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
 function autoReloadOnce() {
   // 同一个页面路径只自动刷新一次，避免 GM 存储一直读不到时进入刷新循环。
   try {
@@ -60,13 +72,7 @@ function boot() {
   // 而播放器的首个 playurl 往往几十毫秒内就到，必然赶不上 → 第一次永远退回原始参数。
   // 读一次池子，顺带完成旧版单账号数据的迁移。
   pool();
-  // 首屏内联配置是否已经拿到有效账号。拿不到说明当前文档启动时
-  // 脚本管理器的 GM 存储缓存还没灌进来；即使后面补推配置，
-  // 页面内联 SSR 已经按 A 的试看数据创建过播放器，部分播放器版本
-  // 不会因为 reload 重新取流，表现就是「只能试看六分钟 / 切不了会员画质」。
   const initialConfigReady = store.isEnabled() && hasCookie();
-  // 一旦某次加载从第一毫秒就拿到了账号，清掉该路径的刷新标记，
-  // 以后同一集再次冷启动时仍然可以自动兜底。
   if (initialConfigReady) {
     try {
       sessionStorage.removeItem('bili-vip:auto-reload:' + location.pathname + location.search);
@@ -84,8 +90,8 @@ function boot() {
     warmMixin();
   } else if (store.isEnabled()) {
     // 部分脚本管理器在 document-start 首次读取 GM 存储时缓存尚未就绪，
-    // hasCookie() 可能短暂为 false。这里静默轮询最多 15 秒（60 × 250ms），
-    // 仅在账号真正就绪时补推一次配置并预热密钥，避免空池时反复 postMessage。
+    // hasCookie() 可能短暂为 false。静默轮询最多 15 秒（60 × 250ms），
+    // 仅在账号就绪时补推配置并预热密钥。
     let tries = 0;
     const configTimer = setInterval(() => {
       tries++;
@@ -96,10 +102,9 @@ function boot() {
       if (hasCookie()) {
         clearInterval(configTimer);
         pushConfig(liveConfig());
-        // 文档启动时存储未就绪，说明首屏播放器很可能已经用 A 的
-        // 试看数据初始化过了。兜底自动刷新一次：下一次文档启动时
-        // GM 存储已热，配置从第一毫秒就是完整的，用户无需手动刷新。
-        if (!initialConfigReady && !autoReloadOnce()) {
+        // 仅在番剧页且文档启动前 3 秒内因 GM 存储延迟就绪时兜底刷新一次，
+        // 避免用户在首页/视频页或面板内手动添加首个账号时页面被意外刷新。
+        if (!initialConfigReady && tries <= 12 && isBangumiPlayPage() && !autoReloadOnce()) {
           log.info(TEXT.startup.autoReload);
           setTimeout(() => {
             try {
@@ -138,7 +143,8 @@ function boot() {
       const b = resolveBorrow();
       if (b.mode === 'auto' && b.account) {
         setTimeout(
-          () => log.info(TEXT.startup.autoBorrow, b.account.uname || b.account.mid, TEXT.startup.autoBorrowTail),
+          () =>
+            log.info(TEXT.startup.autoBorrow, b.account.uname || b.account.mid, TEXT.startup.autoBorrowTail),
           1500
         );
       }

@@ -32,7 +32,9 @@ async function load(rel) {
     target: 'es2022',
     logLevel: 'silent'
   });
-  const mod = await import('data:text/javascript;base64,' + Buffer.from(res.outputFiles[0].text, 'utf8').toString('base64'));
+  const mod = await import(
+    'data:text/javascript;base64,' + Buffer.from(res.outputFiles[0].text, 'utf8').toString('base64')
+  );
   loadCache.set(rel, mod);
   return mod;
 }
@@ -60,7 +62,10 @@ console.log('\n[2] mixinKey（公开测试向量）');
     buildMixinKey('7cd084941338484aae1ad9425b84077c', '4932caff0ff746eab6f01bf08b70ac45')
   );
 
-  const u = signUrl(new URL('https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=2&qn=127'), 'ea1db124af3c7062474693fa704f4ff8');
+  const u = signUrl(
+    new URL('https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1&cid=2&qn=127'),
+    'ea1db124af3c7062474693fa704f4ff8'
+  );
   const rid = u.searchParams.get('w_rid');
   const wts = u.searchParams.get('wts');
   check('重签后带 wts/w_rid', !!rid && /^[0-9a-f]{32}$/.test(rid), rid + ' / ' + wts);
@@ -70,9 +75,7 @@ console.log('\n[2] mixinKey（公开测试向量）');
   const u2 = new URL(u.href);
   u2.searchParams.set('wts', wts);
   const { md5 } = await load('src/core/md5.js');
-  const expect = md5(
-    'bvid=BV1&cid=2&qn=127&wts=' + wts + 'ea1db124af3c7062474693fa704f4ff8'
-  );
+  const expect = md5('bvid=BV1&cid=2&qn=127&wts=' + wts + 'ea1db124af3c7062474693fa704f4ff8');
   check('w_rid 与手算一致', expect === rid, expect + ' != ' + rid);
 }
 
@@ -81,22 +84,36 @@ console.log('\n[3] Cookie 工具');
   const { sanitizeCookie, parseCookie, backfillDeviceCookies, maskCookie } = await load('src/core/cookie.js');
   const pasted = 'SESSDATA=abc\nDedeUserID=123\nbili_jct=xyz';
   const cleaned = sanitizeCookie(pasted);
-  check('换行被规整成分号', parseCookie(cleaned).SESSDATA === 'abc' && parseCookie(cleaned).bili_jct === 'xyz', cleaned);
+  check(
+    '换行被规整成分号',
+    parseCookie(cleaned).SESSDATA === 'abc' && parseCookie(cleaned).bili_jct === 'xyz',
+    cleaned
+  );
 
-  const filled = parseCookie(backfillDeviceCookies('SESSDATA=abc; DedeUserID=123', 'buvid3=DEV3; SESSDATA=AAC; buvid4=DEV4'));
+  const filled = parseCookie(
+    backfillDeviceCookies('SESSDATA=abc; DedeUserID=123', 'buvid3=DEV3; SESSDATA=AAC; buvid4=DEV4')
+  );
   check('缺失的设备 Cookie 被补齐', filled.buvid3 === 'DEV3' && filled.buvid4 === 'DEV4');
   check('身份 Cookie 不会被 A 覆盖', filled.SESSDATA === 'abc');
 
   // csrf 与 SESSDATA 成对（findings §13），任何跨账号补齐都是「B 的登录态 + A 的 csrf」。
   // DedeUserID 是可粘贴的普通字段，不足以证明是同一个号，所以干脆一律不补。
-  const noMix = parseCookie(backfillDeviceCookies('SESSDATA=abc; DedeUserID=123', 'DedeUserID=999; sid=ASID; bili_jct=AJCT'));
+  const noMix = parseCookie(
+    backfillDeviceCookies('SESSDATA=abc; DedeUserID=123', 'DedeUserID=999; sid=ASID; bili_jct=AJCT')
+  );
   check('不会混入 A 的 sid', noMix.sid === undefined, JSON.stringify(noMix));
   check('不会混入 A 的 bili_jct', noMix.bili_jct === undefined, JSON.stringify(noMix));
-  const sameId = parseCookie(backfillDeviceCookies('SESSDATA=abc; DedeUserID=123', 'DedeUserID=123; bili_jct=AJCT'));
+  const sameId = parseCookie(
+    backfillDeviceCookies('SESSDATA=abc; DedeUserID=123', 'DedeUserID=123; bili_jct=AJCT')
+  );
   check('即使 DedeUserID 相同也不补 csrf（它可伪造）', sameId.bili_jct === undefined, JSON.stringify(sameId));
 
   // 下划线别名必须归一，否则它会骗过「缺 csrf 不切号」的守卫却写不进浏览器
-  check('bili-jct 别名归一成 bili_jct', parseCookie(sanitizeCookie('SESSDATA=a; bili-jct=J')).bili_jct === 'J', sanitizeCookie('SESSDATA=a; bili-jct=J'));
+  check(
+    'bili-jct 别名归一成 bili_jct',
+    parseCookie(sanitizeCookie('SESSDATA=a; bili-jct=J')).bili_jct === 'J',
+    sanitizeCookie('SESSDATA=a; bili-jct=J')
+  );
 
   const masked = maskCookie('SESSDATA=0123456789abcdefghij; DedeUserID=42');
   check('脱敏不泄露完整 SESSDATA', !masked.includes('0123456789abcdefghij') && masked.includes('42'), masked);
@@ -112,21 +129,45 @@ console.log('\n[4] Cookie 完整性分级');
 
   const onlySess = validateCookie('SESSDATA=abc');
   check('只有 SESSDATA 时可用（ok=true）', onlySess.ok === true, JSON.stringify(onlySess.problems));
-  check('缺 DedeUserID/bili_jct 归为 warning 而非 problem', onlySess.warnings.length === 2, JSON.stringify(onlySess.warnings));
-  check('warning 文案点明 bili_jct 与番剧相关', onlySess.warnings.some((w) => w.includes('番剧')), JSON.stringify(onlySess.warnings));
+  check(
+    '缺 DedeUserID/bili_jct 归为 warning 而非 problem',
+    onlySess.warnings.length === 2,
+    JSON.stringify(onlySess.warnings)
+  );
+  check(
+    'warning 文案点明 bili_jct 与番剧相关',
+    onlySess.warnings.some((w) => w.includes('番剧')),
+    JSON.stringify(onlySess.warnings)
+  );
   // 设备字段确实可省：不该再劝用户去存
-  check('不再提示补 buvid（实测无影响）', !onlySess.warnings.some((w) => w.includes('buvid')), JSON.stringify(onlySess.warnings));
+  check(
+    '不再提示补 buvid（实测无影响）',
+    !onlySess.warnings.some((w) => w.includes('buvid')),
+    JSON.stringify(onlySess.warnings)
+  );
 
   const full = validateCookie('SESSDATA=a; DedeUserID=1; bili_jct=b');
-  check('字段齐全时无任何提示（设备字段不再算缺失）', full.ok && full.problems.length === 0 && full.warnings.length === 0, JSON.stringify(full.warnings));
+  check(
+    '字段齐全时无任何提示（设备字段不再算缺失）',
+    full.ok && full.problems.length === 0 && full.warnings.length === 0,
+    JSON.stringify(full.warnings)
+  );
 
   const legacy = validateCookie('SESSDATA=a; bili-jct=b; buvid4=d; DedeUserID=9');
-  check('兼容 bili-jct（下划线变体）', legacy.ok && legacy.warnings.length === 0, JSON.stringify(legacy.warnings));
+  check(
+    '兼容 bili-jct（下划线变体）',
+    legacy.ok && legacy.warnings.length === 0,
+    JSON.stringify(legacy.warnings)
+  );
 
   check('字段表覆盖 SESSDATA 与 bili_jct', !!TIERS.SESSDATA && !!TIERS.bili_jct);
   check('帮助文案提到必需要素', helperHelp().includes('SESSDATA') && helperHelp().includes('bili_jct'));
   // 帮助文案是唯一能告诉用户「设备字段为什么不存」的地方
-  check('帮助文案说明了设备字段为什么不存', helperHelp().includes('不保存') && helperHelp().includes('buvid3'), helperHelp());
+  check(
+    '帮助文案说明了设备字段为什么不存',
+    helperHelp().includes('不保存') && helperHelp().includes('buvid3'),
+    helperHelp()
+  );
   check('帮助文案点明 bili_jct 无法推导', helperHelp().includes('推导'), helperHelp());
 }
 
@@ -135,12 +176,27 @@ console.log('\n[5] 端点白名单');
   const { resolveEndpoint } = await load('src/core/endpoints.js');
   check('命中 playurl', !!resolveEndpoint('https://api.bilibili.com/x/player/wbi/playurl?bvid=x', 'GET'));
   check('http 拒绝', resolveEndpoint('http://api.bilibili.com/x/player/wbi/playurl', 'GET') === null);
-  check('GET 命中新版番剧 playview', !!resolveEndpoint('https://api.bilibili.com/ogv/player/playview?ep_id=1', 'GET'));
-  check('POST 命中旧版番剧 playview', !!resolveEndpoint('https://api.bilibili.com/ogv/player/playview?ep_id=1', 'POST'));
-  check('POST 不能打普通视频 playurl', resolveEndpoint('https://api.bilibili.com/x/player/wbi/playurl', 'POST') === null);
+  check(
+    'GET 命中新版番剧 playview',
+    !!resolveEndpoint('https://api.bilibili.com/ogv/player/playview?ep_id=1', 'GET')
+  );
+  check(
+    'POST 命中旧版番剧 playview',
+    !!resolveEndpoint('https://api.bilibili.com/ogv/player/playview?ep_id=1', 'POST')
+  );
+  check(
+    'POST 不能打普通视频 playurl',
+    resolveEndpoint('https://api.bilibili.com/x/player/wbi/playurl', 'POST') === null
+  );
   check('非白名单主机拒绝', resolveEndpoint('https://evil.com/x/player/wbi/playurl', 'GET') === null);
-  check('路径不完全匹配时拒绝', resolveEndpoint('https://api.bilibili.com/x/player/wbi/playurlXXX', 'GET') === null);
-  check('导航接口不属于代理表', resolveEndpoint('https://api.bilibili.com/x/web-interface/nav', 'GET') === null);
+  check(
+    '路径不完全匹配时拒绝',
+    resolveEndpoint('https://api.bilibili.com/x/player/wbi/playurlXXX', 'GET') === null
+  );
+  check(
+    '导航接口不属于代理表',
+    resolveEndpoint('https://api.bilibili.com/x/web-interface/nav', 'GET') === null
+  );
 }
 
 console.log('\n[6] 会员字段补丁');
@@ -169,7 +225,10 @@ console.log('\n[7] 区域形态改写');
   check('area_limit 归零', o.data.rights.area_limit === 0);
   check('ban_area_show 归零', o.data.rights.ban_area_show === 0);
   check('can_watch 置 1', o.data.rights.can_watch === 1);
-  check('areas 补上目标区域', o.data.areas.some((a) => a.name === '港澳台'));
+  check(
+    'areas 补上目标区域',
+    o.data.areas.some((a) => a.name === '港澳台')
+  );
   check('身份字段 login_mid 不受影响', o.data.login_mid === 5);
   check('有字段被改动', n > 0, n);
 
@@ -177,7 +236,10 @@ console.log('\n[7] 区域形态改写');
   patchRegion(o, 'off');
   check('off 模式完全不干预', JSON.stringify(o.data) === before);
 
-  check('模式表完整', ['off', 'hkmo', 'tw', 'cn'].every((k) => REGION_MODES[k]));
+  check(
+    '模式表完整',
+    ['off', 'hkmo', 'tw', 'cn'].every((k) => REGION_MODES[k])
+  );
 }
 
 console.log('\n[7b] 死导出清理：留着只会让人以为「改这份就够了」');
@@ -189,7 +251,8 @@ console.log('\n[7b] 死导出清理：留着只会让人以为「改这份就够
     const noComments = s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     return noComments;
   };
-  const decl = (file, name) => new RegExp('(export\\s+)?(async\\s+)?function\\s+' + name + '\\b').test(declaredIn(file));
+  const decl = (file, name) =>
+    new RegExp('(export\\s+)?(async\\s+)?function\\s+' + name + '\\b').test(declaredIn(file));
 
   const dead = [
     ['src/core/session.js', 'mixinKeyStatus', '面板改走日志/诊断，不再调用'],
@@ -205,7 +268,10 @@ console.log('\n[7b] 死导出清理：留着只会让人以为「改这份就够
     check(`${file} 已删除 ${name}（${why}）`, !decl(file, name), name);
   }
   // clearConfirm 是文案不是函数，单独查
-  check('text.js 已删除 clearConfirm（清空按钮没有确认步骤）', !/^\s*clearConfirm\s*:/m.test(declaredIn('src/core/text.js')));
+  check(
+    'text.js 已删除 clearConfirm（清空按钮没有确认步骤）',
+    !/^\s*clearConfirm\s*:/m.test(declaredIn('src/core/text.js'))
+  );
 
   // 共享单一事实源：主世界钩子经 esbuild 直接复用 src/shared/vip.js 与 src/shared/region.js，不再手写双份副本。
   const hook = fs.readFileSync(path.join(ROOT, 'src/injected/hook.js'), 'utf8');
@@ -229,7 +295,10 @@ console.log('\n[8] 钩子源码与自检协议');
     check(`自检字段 ${f} 被面板读出来`, panel.includes('sc.' + f), f);
   }
   check('bus 会存下钩子回的状态', /case 'pong'/.test(bus) && /hookSelfCheck = d\.state/.test(bus));
-  check('bus 提供 pingHook 与 getHookSelfCheck', /export function pingHook/.test(bus) && /export function getHookSelfCheck/.test(bus));
+  check(
+    'bus 提供 pingHook 与 getHookSelfCheck',
+    /export function pingHook/.test(bus) && /export function getHookSelfCheck/.test(bus)
+  );
   check('计数挂在 callSandbox 的投递处', /payload\.token = token;[\s\S]{0,200}?intercepted\+\+/.test(hook));
   check('__playinfo__ 装成功后置位', /playinfoHooked = true/.test(hook));
   check('playinfoHidden 要求访问器已装上', /playinfoHidden: playinfoHooked && hidden/.test(hook));
@@ -247,7 +316,10 @@ console.log('\n[8] 钩子源码与自检协议');
   } catch (e) {
     console.error(e.message);
   }
-  check('钩子模块可独立打包且保留唯一占位符', bundled.length > 0 && bundled.split('__BILI_VIP_CFG__').length - 1 === 1);
+  check(
+    '钩子模块可独立打包且保留唯一占位符',
+    bundled.length > 0 && bundled.split('__BILI_VIP_CFG__').length - 1 === 1
+  );
 }
 
 console.log('\n[9] 构建产物');
@@ -259,7 +331,10 @@ console.log('\n[9] 构建产物');
   }
   const dist = fs.readFileSync(distPath, 'utf8');
   check('userscript 头在最前面', dist.startsWith('// ==UserScript=='));
-  check('元数据头全局唯一（正文无重复模板）', dist.indexOf('// ==UserScript==') === dist.lastIndexOf('// ==UserScript=='));
+  check(
+    '元数据头全局唯一（正文无重复模板）',
+    dist.indexOf('// ==UserScript==') === dist.lastIndexOf('// ==UserScript==')
+  );
   check('包含 @icon 图标声明', dist.includes('// @icon'));
   check('run-at document-start', dist.includes('@run-at       document-start'));
   // 钩子源码是以字符串形式内联的，占位符必须原样保留在产物里，由 inject.js 在运行时替换
@@ -280,10 +355,15 @@ console.log('\n[10] 菜单命令注册与符号完整性');
     GM_deleteValue: () => {},
     GM_xmlhttpRequest: () => {},
     navigator: { clipboard: { readText: async () => '' } },
-    document: { createElement: () => ({ appendChild: () => {}, querySelector: () => null }), head: null, body: null, documentElement: null },
+    document: {
+      createElement: () => ({ appendChild: () => {}, querySelector: () => null }),
+      head: null,
+      body: null,
+      documentElement: null
+    },
     window: {},
     location: { href: 'https://www.bilibili.com/', reload() {} },
-    console: { log(){}, error(){}, warn(){} }
+    console: { log() {}, error() {}, warn() {} }
   };
   ctx.window = ctx;
 
@@ -303,7 +383,10 @@ console.log('\n[10] 菜单命令注册与符号完整性');
     ctx
   );
   check('9 项菜单命令全部成功注册', registered.length === 9, registered.length);
-  check('所有菜单回调均为有效函数（无未定义符号缺失）', registered.every((m) => typeof m.fn === 'function'));
+  check(
+    '所有菜单回调均为有效函数（无未定义符号缺失）',
+    registered.every((m) => typeof m.fn === 'function')
+  );
 
   // 真实调用测试：确保 handler 内部没有未绑定的自由变量（如丢失 import 抛出 ReferenceError）
   const refErrors = [];
@@ -345,7 +428,10 @@ console.log('\n[11] 编码偏好重排');
   const mockJson = JSON.parse(rawJson);
   reorderStreams(mockJson, 'av1');
   const vList = mockJson.data.dash.video;
-  check('分辨率 125/120/112 原始顺序保持不变', vList[0].id === 125 && vList[1].id === 120 && vList[3].id === 112);
+  check(
+    '分辨率 125/120/112 原始顺序保持不变',
+    vList[0].id === 125 && vList[1].id === 120 && vList[3].id === 112
+  );
   check('125 档位仅有 HEVC 时保持原样', vList[0].codecid === 12);
   check('120 档位优先排入 HEVC（无 AV1 时回退）', vList[1].codecid === 12 && vList[2].codecid === 7);
   check('112 档位优先排入 AV1', vList[3].codecid === 13 && vList[4].codecid === 12 && vList[5].codecid === 7);
@@ -371,9 +457,14 @@ console.log('\n[11] 编码偏好重排');
       }
     }
   });
-  const audioPatched = JSON.parse(patchJsonText(audioJson, { patchVip: false, region: 'off', codec: 'auto' }));
+  const audioPatched = JSON.parse(
+    patchJsonText(audioJson, { patchVip: false, region: 'off', codec: 'auto' })
+  );
   const aList = audioPatched.data.dash.audio;
-  check('音频流按带宽降序排列 (30280 192k 优先)', aList[0].id === 30280 && aList[1].id === 30232 && aList[2].id === 30216);
+  check(
+    '音频流按带宽降序排列 (30280 192k 优先)',
+    aList[0].id === 30280 && aList[1].id === 30232 && aList[2].id === 30216
+  );
 
   // 6) 官源 CDN 优选：将 PCDN / MCDN 降权到备选末尾
   const { reorderCdnUrls } = await load('src/core/patch.js');
@@ -394,17 +485,33 @@ console.log('\n[11] 编码偏好重排');
       }
     }
   });
-  const cdnPatched = JSON.parse(patchJsonText(cdnRaw, { patchVip: false, region: 'off', codec: 'auto', preferCdn: true }));
+  const cdnPatched = JSON.parse(
+    patchJsonText(cdnRaw, { patchVip: false, region: 'off', codec: 'auto', preferCdn: true })
+  );
   const v0 = cdnPatched.data.dash.video[0];
-  check('官源 UPOS 镜像节点被提至 baseUrl', v0.baseUrl.includes('upos-sz-mirrorcos.bilivideo.com'), v0.baseUrl);
-  check('PCDN/MCDN 被降权至 backupUrl', v0.backupUrl.every((u) => u.includes('mcdn') || u.includes('szbdyd')), v0.backupUrl);
-  check('未开启 preferCdn 时不改动原有 CDN 顺序', JSON.parse(patchJsonText(cdnRaw, { patchVip: false, region: 'off', codec: 'auto', preferCdn: false })).data.dash.video[0].baseUrl.includes('mcdn'));
+  check(
+    '官源 UPOS 镜像节点被提至 baseUrl',
+    v0.baseUrl.includes('upos-sz-mirrorcos.bilivideo.com'),
+    v0.baseUrl
+  );
+  check(
+    'PCDN/MCDN 被降权至 backupUrl',
+    v0.backupUrl.every((u) => u.includes('mcdn') || u.includes('szbdyd')),
+    v0.backupUrl
+  );
+  check(
+    '未开启 preferCdn 时不改动原有 CDN 顺序',
+    JSON.parse(
+      patchJsonText(cdnRaw, { patchVip: false, region: 'off', codec: 'auto', preferCdn: false })
+    ).data.dash.video[0].baseUrl.includes('mcdn')
+  );
   check('reorderCdnUrls 返回调整计数', reorderCdnUrls(JSON.parse(cdnRaw)) === 1);
 }
 console.log('\n[12] 扫码登录凭据提取与矢量二维码');
 {
   const { extractCookies } = await load('src/core/qr-login.js');
-  const crossUrl = 'https://passport.biligame.com/crossDomain?DedeUserID=123456&DedeUserID__ckMd5=abc&Expires=175000&SESSDATA=sess-qr&bili_jct=jct-qr';
+  const crossUrl =
+    'https://passport.biligame.com/crossDomain?DedeUserID=123456&DedeUserID__ckMd5=abc&Expires=175000&SESSDATA=sess-qr&bili_jct=jct-qr';
   const headers = 'set-cookie: sid=sid-qr; path=/\r\nset-cookie: buvid3=dev3; path=/';
   const extracted = extractCookies(crossUrl, headers);
   check('从 crossDomain URL 中提取 SESSDATA', extracted.includes('SESSDATA=sess-qr'), extracted);
@@ -433,7 +540,11 @@ console.log('\n[13] CHANGELOG 版本条目解析');
     '- 旧条目'
   ].join('\n');
   const extracted = extractChangelog('v1.1.0', sample);
-  check('正确提取指定版本的更新说明', extracted.includes('条目 1') && !extracted.includes('旧条目'), extracted);
+  check(
+    '正确提取指定版本的更新说明',
+    extracted.includes('条目 1') && !extracted.includes('旧条目'),
+    extracted
+  );
   const byCleanVer = extractChangelog('1.1.0', sample);
   check('支持无 v 前缀匹配', byCleanVer.includes('条目 2'), byCleanVer);
 }
@@ -441,11 +552,18 @@ console.log('\n[13] CHANGELOG 版本条目解析');
 console.log('\n[14] 加密备份导出与解密往返');
 {
   const { encryptBackup, decryptBackup } = await load('src/core/backup.js');
-  const sample = { exportedAt: 12345, accounts: [{ cookie: 'SESSDATA=abc; bili_jct=xyz', label: 'VIP' }], settings: { preferCdn: true } };
+  const sample = {
+    exportedAt: 12345,
+    accounts: [{ cookie: 'SESSDATA=abc; bili_jct=xyz', label: 'VIP' }],
+    settings: { preferCdn: true }
+  };
   const enc = await encryptBackup(sample, 'pass-1234');
   check('密文不含明文凭据', !enc.includes('SESSDATA=abc') && enc.includes('bili-toolkit-backup'));
   const dec = await decryptBackup(enc, 'pass-1234');
-  check('正确口令无损还原账号与设置', dec.accounts[0].cookie === 'SESSDATA=abc; bili_jct=xyz' && dec.settings.preferCdn === true);
+  check(
+    '正确口令无损还原账号与设置',
+    dec.accounts[0].cookie === 'SESSDATA=abc; bili_jct=xyz' && dec.settings.preferCdn === true
+  );
   let wrongPwdFailed = false;
   try {
     await decryptBackup(enc, 'wrong-pass');

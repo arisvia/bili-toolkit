@@ -74,7 +74,10 @@ export function backfillDeviceCookies(bCookie, aCookie) {
   const missing = DEVICE_COOKIE_BACKFILL.filter((k) => !b[k] && a[k]);
   if (!missing.length) return bCookie;
 
-  const parts = String(bCookie).split(';').map((s) => s.trim()).filter(Boolean);
+  const parts = String(bCookie)
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean);
   const have = new Set(parts.map((s) => s.slice(0, s.indexOf('=')).trim()));
   for (const k of missing) {
     if (have.has(k)) continue;

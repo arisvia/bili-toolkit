@@ -109,13 +109,7 @@ export const PROBE_TTL_MS = 24 * 60 * 60 * 1000;
  *
  * 清单之外的 Cookie 一律不动 —— 写错一个无关字段比留着旧值更糟。
  */
-export const IDENTITY_COOKIE_KEYS = [
-  'SESSDATA',
-  'bili_jct',
-  'DedeUserID',
-  'DedeUserID__ckMd5',
-  'sid'
-];
+export const IDENTITY_COOKIE_KEYS = ['SESSDATA', 'bili_jct', 'DedeUserID', 'DedeUserID__ckMd5', 'sid'];
 
 /**
  * 这些字段写回时必须带上 HttpOnly 标记。

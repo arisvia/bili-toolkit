@@ -104,7 +104,8 @@ function makeEnv(cfgOverrides = {}, responder) {
     }
   };
   function dispatch(data) {
-    for (const fn of listeners.message || []) fn({ data: { __ns: '__BILI_VIP__', ...data }, source: vmGlobalRef });
+    for (const fn of listeners.message || [])
+      fn({ data: { __ns: '__BILI_VIP__', ...data }, source: vmGlobalRef });
   }
   let vmGlobalRef = null;
   win.__dispatch = dispatch;
@@ -155,9 +156,15 @@ function makeEnv(cfgOverrides = {}, responder) {
 
   const realFetch = (url) =>
     Promise.resolve(
-      new Response(JSON.stringify({ code: 0, data: { vipStatus: 0, vipType: 0, vip: { status: 0, type: 0 }, from: 'A-account' } }), {
-        headers: { 'content-type': 'application/json' }
-      })
+      new Response(
+        JSON.stringify({
+          code: 0,
+          data: { vipStatus: 0, vipType: 0, vip: { status: 0, type: 0 }, from: 'A-account' }
+        }),
+        {
+          headers: { 'content-type': 'application/json' }
+        }
+      )
     );
   win.fetch = (input) => {
     const url = typeof input === 'string' ? input : input.url;
@@ -225,12 +232,18 @@ console.log('\n[2] 白名单内的 XHR 转交沙箱并模拟响应');
 
   const xhr = new FakeXHR();
   xhr.open('GET', '//api.bilibili.com/x/player/wbi/playurl?bvid=BV1xx&cid=1');
-  xhr.onload = function () { xhr.onloadCalls = (xhr.onloadCalls || 0) + 1; };
+  xhr.onload = function () {
+    xhr.onloadCalls = (xhr.onloadCalls || 0) + 1;
+  };
   xhr.send();
   await sleep(30);
 
   check('已向沙箱发出请求', state.sent.length === 1, state.sent.length);
-  check('url 被补成绝对地址', state.sent[0].url.startsWith('https://api.bilibili.com/x/player/wbi/playurl'), state.sent[0].url);
+  check(
+    'url 被补成绝对地址',
+    state.sent[0].url.startsWith('https://api.bilibili.com/x/player/wbi/playurl'),
+    state.sent[0].url
+  );
   check('没有回落到原生 send', state.fetched.length === 0, state.fetched);
   check('readyState 推进到 4', xhr.readyState === 4, xhr.readyState);
   check('status 为 200', xhr.status === 200);
@@ -258,16 +271,27 @@ console.log('\n[2b] 伪造 XHR：responseType 与事件恰好一次');
   // 播放器常先 send() 再改 responseType —— 钩子按 send 之后的当前值解码
   const xhr = new FakeXHR();
   xhr.open('GET', '//api.bilibili.com/x/player/wbi/playurl?bvid=BV1xx&cid=1');
-  xhr.onload = function () { xhr.onloadCalls = (xhr.onloadCalls || 0) + 1; };
+  xhr.onload = function () {
+    xhr.onloadCalls = (xhr.onloadCalls || 0) + 1;
+  };
   xhr.send();
   xhr.responseType = 'json';
   await sleep(30);
-  check('responseType 改在 send 之后也能解码', !!(xhr.response && xhr.response.data && xhr.response.data.quality === 120), xhr.response);
+  check(
+    'responseType 改在 send 之后也能解码',
+    !!(xhr.response && xhr.response.data && xhr.response.data.quality === 120),
+    xhr.response
+  );
   check('onload 只触发一次', xhr.onloadCalls === 1, xhr.onloadCalls);
   // readystatechange 按 readyState 2/3/4 触发三次是正常语义，其余必须各一次
   const once = ['loadstart', 'progress', 'load', 'loadend'];
   for (const t of once) check(`${t} 恰好一次`, xhr.events.filter((x) => x === t).length === 1, xhr.events);
-  check('事件顺序正确', xhr.events.join(',') === 'loadstart,readystatechange,readystatechange,progress,readystatechange,load,loadend', xhr.events);
+  check(
+    '事件顺序正确',
+    xhr.events.join(',') ===
+      'loadstart,readystatechange,readystatechange,progress,readystatechange,load,loadend',
+    xhr.events
+  );
 }
 
 console.log('\n[3] 非白名单请求原样放行');
@@ -278,7 +302,10 @@ console.log('\n[3] 非白名单请求原样放行');
   xhr.send();
   await sleep(20);
   check('没有转交沙箱', state.sent.length === 0);
-  check('走了原生 send', state.fetched.length === 1 && state.fetched[0].url.includes('/x/web-interface/view/detail'));
+  check(
+    '走了原生 send',
+    state.fetched.length === 1 && state.fetched[0].url.includes('/x/web-interface/view/detail')
+  );
 
   const xhr2 = new FakeXHR();
   xhr2.open('GET', 'https://api.bilibili.com/x/player/wbi/playurlXX');
@@ -363,7 +390,10 @@ console.log('\n[8] 本地伪装接口不打扰沙箱');
   xhr.send();
   await sleep(40);
   check('nav 没有转交沙箱', state.sent.length === 0);
-  check('用原生 fetch 取回并本地改写', state.fetched.some((f) => f.url.includes('/x/web-interface/nav')));
+  check(
+    '用原生 fetch 取回并本地改写',
+    state.fetched.some((f) => f.url.includes('/x/web-interface/nav'))
+  );
   check('vipStatus 被改成 1', JSON.parse(xhr.responseText).data.vipStatus === 1);
 }
 
@@ -391,11 +421,23 @@ console.log('\n[10] nanoPlayer (现代番剧播放器) 劫持与流地址接管'
   });
   const win = env.win;
   win.__PLAYURL_HYDRATE_DATA__ = { result: { video_info: { is_preview: 1 } } };
-  check('hydrate 数据保留对象且试看字段被 patch', win.__PLAYURL_HYDRATE_DATA__ && win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 0);
-  check('hydrate 数据被补充完整 play_video_type', win.__PLAYURL_HYDRATE_DATA__.result.play_video_type === 'whole');
+  check(
+    'hydrate 数据保留对象且试看字段被 patch',
+    win.__PLAYURL_HYDRATE_DATA__ && win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 0
+  );
+  check(
+    'hydrate 数据被补充完整 play_video_type',
+    win.__PLAYURL_HYDRATE_DATA__.result.play_video_type === 'whole'
+  );
   // 模拟真实页面初始化 nanoPlayer
   const dummyNano = {
-    createPlayer: (cfg) => ({ cfg, lastRequestConfig: null, updateRequestConfig(n) { this.lastRequestConfig = n; } })
+    createPlayer: (cfg) => ({
+      cfg,
+      lastRequestConfig: null,
+      updateRequestConfig(n) {
+        this.lastRequestConfig = n;
+      }
+    })
   };
   win.nano = dummyNano;
   const created = win.nano.createPlayer({
@@ -431,10 +473,14 @@ console.log('\n[10b] 晚到的 window.player 也会被接管');
   const env = makeEnv({ hidePlayinfo: true });
   const fakePlayer = {
     cfg: null,
-    updateRequestConfig(n) { this.cfg = n; },
+    updateRequestConfig(n) {
+      this.cfg = n;
+    },
     on() {},
     toggleFeature() {},
-    play() { return Promise.resolve(); },
+    play() {
+      return Promise.resolve();
+    },
     reload() {}
   };
   env.vmGlobal.nano = { createPlayer: (cfg) => ({ cfg }) };
@@ -444,7 +490,10 @@ console.log('\n[10b] 晚到的 window.player 也会被接管');
     reqHttpPlayUrlInfo: () => Promise.resolve({ preview: true }),
     reqHttpPlayUrlInfoScope: [1]
   });
-  check('晚接管也会净化 updateRequestConfig', fakePlayer.cfg && fakePlayer.cfg.reqHttpPlayUrlInfo === undefined);
+  check(
+    '晚接管也会净化 updateRequestConfig',
+    fakePlayer.cfg && fakePlayer.cfg.reqHttpPlayUrlInfo === undefined
+  );
   env.win.__teardown();
 }
 
@@ -455,9 +504,13 @@ console.log('\n[10c] 三开关解耦（总开关关 / 空池 / 关界面伪装 /
   const offPlayer = {
     cfg: null,
     reloaded: 0,
-    updateRequestConfig(n) { this.cfg = n; },
+    updateRequestConfig(n) {
+      this.cfg = n;
+    },
     on() {},
-    reload() { this.reloaded++; }
+    reload() {
+      this.reloaded++;
+    }
   };
   offEnv.vmGlobal.nano = { createPlayer: () => offPlayer };
   offEnv.vmGlobal.nano.createPlayer({ requestConfig: { reqHttpPlayUrlInfo: () => {} } });
@@ -465,8 +518,14 @@ console.log('\n[10c] 三开关解耦（总开关关 / 空池 / 关界面伪装 /
   offEnv.win.__PLAYURL_HYDRATE_DATA__ = { result: { video_info: { is_preview: 1 } } };
   const offNav = await (await offEnv.win.fetch('https://api.bilibili.com/x/web-interface/nav')).json();
   check('总开关关闭时不打 player 接管标记', !offPlayer.__biliVipPlayerHooked);
-  check('总开关关闭时不清空 updateRequestConfig', offPlayer.cfg && offPlayer.cfg.reqHttpPlayUrlInfo === 'keep');
-  check('总开关关闭时不改写 hydrate 试看标志', offEnv.win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 1);
+  check(
+    '总开关关闭时不清空 updateRequestConfig',
+    offPlayer.cfg && offPlayer.cfg.reqHttpPlayUrlInfo === 'keep'
+  );
+  check(
+    '总开关关闭时不改写 hydrate 试看标志',
+    offEnv.win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 1
+  );
   check('总开关关闭时不伪造 nav vipStatus', offNav.data.vipStatus === 0);
   offEnv.win.__teardown();
 
@@ -477,7 +536,14 @@ console.log('\n[10c] 三开关解耦（总开关关 / 空池 / 关界面伪装 /
   emptyEnv.vmGlobal.document = {
     documentElement: {},
     querySelectorAll: () => [],
-    getElementById: (id) => (id === 'BilibiliVipDialog' ? { remove() { dialogRemoved = true; } } : null)
+    getElementById: (id) =>
+      id === 'BilibiliVipDialog'
+        ? {
+            remove() {
+              dialogRemoved = true;
+            }
+          }
+        : null
   };
   emptyEnv.vmGlobal.MutationObserver = class {
     observe() {}
@@ -486,18 +552,28 @@ console.log('\n[10c] 三开关解耦（总开关关 / 空池 / 关界面伪装 /
   const emptyPlayer = {
     cfg: null,
     reloaded: 0,
-    updateRequestConfig(n) { this.cfg = n; },
+    updateRequestConfig(n) {
+      this.cfg = n;
+    },
     on() {},
-    reload() { this.reloaded++; }
+    reload() {
+      this.reloaded++;
+    }
   };
   emptyEnv.vmGlobal.nano = { createPlayer: () => emptyPlayer };
   emptyEnv.vmGlobal.nano.createPlayer({ requestConfig: { reqHttpPlayUrlInfo: () => {} } });
   emptyPlayer.updateRequestConfig({ reqHttpPlayUrlInfo: 'strip-me', reqHttpPlayUrlInfoScope: [1] });
   emptyEnv.win.__PLAYURL_HYDRATE_DATA__ = { result: { video_info: { is_preview: 1 } } };
   const emptyNav = await (await emptyEnv.win.fetch('https://api.bilibili.com/x/web-interface/nav')).json();
-  check('空池时仍提前净化 updateRequestConfig', emptyPlayer.cfg && emptyPlayer.cfg.reqHttpPlayUrlInfo === undefined);
+  check(
+    '空池时仍提前净化 updateRequestConfig',
+    emptyPlayer.cfg && emptyPlayer.cfg.reqHttpPlayUrlInfo === undefined
+  );
   check('空池时不触发 hookPlayer 接管', !emptyPlayer.__biliVipPlayerHooked);
-  check('空池时不伪造 hydrate 试看标志', emptyEnv.win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 1);
+  check(
+    '空池时不伪造 hydrate 试看标志',
+    emptyEnv.win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 1
+  );
   check('空池时不伪造 nav vipStatus', emptyNav.data.vipStatus === 0);
   check('空池时不误删 #BilibiliVipDialog', dialogRemoved === false);
 
@@ -521,7 +597,14 @@ console.log('\n[10c] 三开关解耦（总开关关 / 空池 / 关界面伪装 /
   noUiEnv.vmGlobal.document = {
     documentElement: {},
     querySelectorAll: () => [],
-    getElementById: (id) => (id === 'BilibiliVipDialog' ? { remove() { noUiDialogRemoved = true; } } : null)
+    getElementById: (id) =>
+      id === 'BilibiliVipDialog'
+        ? {
+            remove() {
+              noUiDialogRemoved = true;
+            }
+          }
+        : null
   };
   noUiEnv.vmGlobal.MutationObserver = class {
     observe() {}
@@ -529,7 +612,9 @@ console.log('\n[10c] 三开关解耦（总开关关 / 空池 / 关界面伪装 /
   };
   const noUiPlayer = {
     cfg: null,
-    updateRequestConfig(n) { this.cfg = n; },
+    updateRequestConfig(n) {
+      this.cfg = n;
+    },
     on() {},
     reload() {}
   };
@@ -538,8 +623,14 @@ console.log('\n[10c] 三开关解耦（总开关关 / 空池 / 关界面伪装 /
   noUiPlayer.updateRequestConfig({ reqHttpPlayUrlInfo: 'strip-me' });
   noUiEnv.win.__PLAYURL_HYDRATE_DATA__ = { result: { video_info: { is_preview: 1 } } };
   check('关闭界面伪装时仍接管播放器', noUiPlayer.__biliVipPlayerHooked === true);
-  check('关闭界面伪装时仍净化 updateRequestConfig', noUiPlayer.cfg && noUiPlayer.cfg.reqHttpPlayUrlInfo === undefined);
-  check('关闭界面伪装时不改写 hydrate VIP 标志', noUiEnv.win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 1);
+  check(
+    '关闭界面伪装时仍净化 updateRequestConfig',
+    noUiPlayer.cfg && noUiPlayer.cfg.reqHttpPlayUrlInfo === undefined
+  );
+  check(
+    '关闭界面伪装时不改写 hydrate VIP 标志',
+    noUiEnv.win.__PLAYURL_HYDRATE_DATA__.result.video_info.is_preview === 1
+  );
   check('关闭界面伪装时不删除 #BilibiliVipDialog', noUiDialogRemoved === false);
   noUiEnv.win.__teardown();
 }
@@ -576,7 +667,10 @@ console.log('[11] 软登出凭据保活拦截');
   await new Promise((r) => setTimeout(r, 20));
 
   check('XHR 退出请求未向真实网络发送', !state.fetched.some((f) => f.url.includes('/login/exit/v2')));
-  check('XHR 退出请求被转交沙箱', state.sent.some((s) => s.type === 'logout' && s.url.includes('/login/exit/v2')));
+  check(
+    'XHR 退出请求被转交沙箱',
+    state.sent.some((s) => s.type === 'logout' && s.url.includes('/login/exit/v2'))
+  );
   check('XHR 收到伪造的成功响应 status: true', xhrRes && xhrRes.status === true && xhrRes.code === 0, xhrRes);
 
   // 2. Fetch POST passport.bilibili.com/login/exit/v2
@@ -585,13 +679,20 @@ console.log('[11] 软登出凭据保活拦截');
     body: 'biliCSRF=test_csrf_token'
   });
   const fetchJson = await fetchResp.json();
-  check('Fetch 退出请求收到伪造的成功响应', fetchJson && fetchJson.status === true && fetchJson.code === 0, fetchJson);
+  check(
+    'Fetch 退出请求收到伪造的成功响应',
+    fetchJson && fetchJson.status === true && fetchJson.code === 0,
+    fetchJson
+  );
 
   // 3. 非退出请求（如二维码生成）不被拦截
   const qrXhr = new win.XMLHttpRequest();
   qrXhr.open('GET', 'https://passport.bilibili.com/x/passport-login/web/qrcode/generate');
   qrXhr.send();
-  check('非退出请求未被拦截并正常放行', state.fetched.some((f) => f.url.includes('/qrcode/generate')));
+  check(
+    '非退出请求未被拦截并正常放行',
+    state.fetched.some((f) => f.url.includes('/qrcode/generate'))
+  );
 
   win.__teardown();
 }

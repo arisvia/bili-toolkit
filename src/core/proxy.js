@@ -50,15 +50,15 @@ export function summarize(text) {
     const rawFormats = Array.isArray(src.support_formats)
       ? src.support_formats
       : Array.isArray(d.support_formats)
-      ? d.support_formats
-      : [];
+        ? d.support_formats
+        : [];
     const formats = rawFormats.length
       ? rawFormats.map((f) => (f && typeof f === 'object' ? f.quality : f)).filter(Boolean)
       : Array.isArray(src.accept_quality)
-      ? src.accept_quality
-      : Array.isArray(d.accept_quality)
-      ? d.accept_quality
-      : [];
+        ? src.accept_quality
+        : Array.isArray(d.accept_quality)
+          ? d.accept_quality
+          : [];
 
     let durlKbps = null;
     const durlList = Array.isArray(src.durl) ? src.durl : [];
@@ -193,7 +193,14 @@ async function prepare(ep, method, rawUrl, rawBody) {
     originalUrl = o.href;
   }
 
-  let body = method === 'POST' && rawBody ? (csrf ? injectCsrf(rawBody, csrf) : ep.csrf ? stripCsrf(rawBody) : rawBody) : '';
+  let body =
+    method === 'POST' && rawBody
+      ? csrf
+        ? injectCsrf(rawBody, csrf)
+        : ep.csrf
+          ? stripCsrf(rawBody)
+          : rawBody
+      : '';
 
   // 重试要用的「没注入过 B 的 csrf」的 body。
   // 直接拿 rawBody 是不行的：POST 端点被抬高参数时不改 body，
@@ -224,7 +231,15 @@ async function prepare(ep, method, rawUrl, rawBody) {
         note
       };
     }
-    return { url: url.href, body, originalUrl, originalBody, upgraded: true, signed: false, note: '缺少 wbi 密钥，参数已抬高但未重签' };
+    return {
+      url: url.href,
+      body,
+      originalUrl,
+      originalBody,
+      upgraded: true,
+      signed: false,
+      note: '缺少 wbi 密钥，参数已抬高但未重签'
+    };
   }
 
   const signed = signUrl(url, mixinKey);
@@ -253,7 +268,8 @@ async function sendWithB(method, url, headers, body) {
     // 有 HTTP 结果就直接交给上层判断业务码；只有纯网络错误才值得换一种发送方式
     if (res.ok || res.text) return res;
     lastErr = res.error || 'http' + res.status;
-    if (attempt < order.length - 1) log.warn(`发送方式 ${order[attempt] + 1} 失败（${lastErr}），换下一种重试`);
+    if (attempt < order.length - 1)
+      log.warn(`发送方式 ${order[attempt] + 1} 失败（${lastErr}），换下一种重试`);
   }
   return { ok: false, status: 0, text: '', headersRaw: '', error: lastErr || 'unknown' };
 }
@@ -313,7 +329,8 @@ const RETRY_ON_ORIGINAL = new Set([-400, -403, -404, -405, -412]);
  * -10403 不仅代表大会员失效，B 站在地区版权限制、单点付费、充电专属影片上也会返回 -10403。
  * 命中这类内容级限制时绝不能把正常的大会员账号误标为失效。
  */
-const CONTENT_RESTRICTION_RE = /地区|区域|版权|境外|境内|付费|单点|购买|点播|充电|限免|仅限|area|region|copyright/i;
+const CONTENT_RESTRICTION_RE =
+  /地区|区域|版权|境外|境内|付费|单点|购买|点播|充电|限免|仅限|area|region|copyright/i;
 
 function isAccountEntitlementFailure(code, message) {
   if (code === -101) return true;
@@ -331,7 +348,14 @@ export async function handleProxy(ep, msg) {
     stats.cacheServed++;
     log.debug(`[缓存命中] ${ep.id}`);
     setCurrentMedia(ep.id, cached.summary, true);
-    return { passthrough: false, status: cached.status, statusText: 'OK', body: cached.body, headersRaw: cached.headersRaw, cached: true };
+    return {
+      passthrough: false,
+      status: cached.status,
+      statusText: 'OK',
+      body: cached.body,
+      headersRaw: cached.headersRaw,
+      cached: true
+    };
   }
 
   // 记下发起时的借用来源。切号 / 改借用源会 resetCache()，
@@ -416,7 +440,17 @@ export async function handleProxy(ep, msg) {
   });
 
   if (!result.passthrough && ttl > 0 && myGen === cacheGeneration()) {
-    cacheSet(key, { status: result.status, statusText: result.statusText, body: result.body, headersRaw: result.headersRaw, summary: result.summary }, ttl);
+    cacheSet(
+      key,
+      {
+        status: result.status,
+        statusText: result.statusText,
+        body: result.body,
+        headersRaw: result.headersRaw,
+        summary: result.summary
+      },
+      ttl
+    );
   }
   return result;
 }
@@ -451,7 +485,9 @@ export async function handleRequest(msg) {
  * 这是「首次打开就能出大会员画质、且不必反复切选集」的关键优化。
  */
 export function prefetch(url, method, body, headers) {
-  return handleRequest({ url, method: method || 'GET', body: body || '', headers: headers || {} }).catch(() => null);
+  return handleRequest({ url, method: method || 'GET', body: body || '', headers: headers || {} }).catch(
+    () => null
+  );
 }
 
 export function resetCache() {

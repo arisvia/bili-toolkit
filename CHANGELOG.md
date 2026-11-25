@@ -5,29 +5,24 @@
 
 ## [v1.4.1] - 2026-11-25
 
-### 优化与修复 (Improvements & Fixes)
-- **扫码登录失效修复**：生成二维码与轮询状态时补充 `source=main_web`，并从 `SecureCollectSDK` 读取 `b_ret` 风控令牌随轮询提交，修复手机确认后二维码立刻变成「已失效」（86038）、账号无法入池的问题。
-- **切号 SESSDATA 写入修复**：部分 Violentmonkey 未开启 HttpOnly Cookie 权限时，`GM.cookie.set` 会静默丢弃 SESSDATA 却回报成功，导致只换了 `bili_jct`/`DedeUserID`、刷新后整组被服务端还原。现在自动探测权限并退回非 HttpOnly 写入，写入后读回校验，失败则明确报错。
-- **首屏晚到接管加固**：晚到的钩子会先清空播放器已有的 SSR 试看绑定再包装 `updateRequestConfig`；配置就绪后提前注入会员弹窗隐藏样式；首屏账号数据晚于文档启动时按路径自动刷新一次，避免只能试看六分钟或切不了会员画质。
+### 修复与优化
+- **扫码登录修复**：补齐 `source=main_web` 与 `SecureCollectSDK` 风控令牌 `b_ret`（含 Trusted Types 与超时重试），修复扫码确认后报 `86038` 失效（thanks @Emilelu #8）。
+- **Violentmonkey 切号兼容**：写入 `SESSDATA` 后读回校验，无 HttpOnly 权限时自动回退非 HttpOnly 写入（thanks @Emilelu #8）。
+- **番剧晚接管加固**：晚接管播放器时主动清空旧 SSR 试看绑定、提前隐藏收银台弹窗，并在番剧首屏存储晚到时按路径兜底刷新一次（thanks @Emilelu #8）。
+- **可读构建与代码规范**：生产构建改为未压缩可读输出（兼容 Greasy Fork 审核），引入 Prettier 与 CI 格式门禁。
 
 ## [v1.4.0] - 2026-11-25
 
-### 新增特性 (Features)
-- **官源 CDN 优选（降权 PCDN）**：新增「官源 CDN」开关，自动识别并将 `upos-*-mirror*.bilivideo.com` 等官源节点提升至首选，将已知卡顿的 `mcdn` / `szbdyd` / 非常规高端口 PCDN 节点降权至备选末尾。
-- **账号池加密备份与跨设备迁移**：基于浏览器原生 Web Crypto（PBKDF2-SHA256 + AES-GCM，零外部依赖）支持口令加密导出/导入账号池与偏好设置，导入时安全合并并保留备注。
-- **多大会员自动故障切换与批量重探**：借用账号返回 `-101` 失效时自动切换池内下一个有效大会员账号重试当次播放请求；多账号池支持「全部重探」串行节流刷新。
-- **跨标签页实时同步与快捷操作**：接入 `GM_addValueChangeListener` 实现多标签页账号池与配置变更自动同步；支持 `Alt+Shift+B` 全局快捷键开关面板，左下角微缩胶囊托盘新增「权益借用」一键快切开关。
+### 新增
+- **官源 CDN 优选**：新增「官源 CDN」开关，优先官方 UPOS 节点并降权 PCDN。
+- **加密备份与迁移**：基于 Web Crypto（PBKDF2 + AES-GCM）支持口令加密导入/导出账号池。
+- **多大会员故障切换与批量重探**：借用号 `-101` 时自动切下一个有效会员重试；支持「全部重探」。
+- **跨标签页同步与快捷操作**：接入 `GM_addValueChangeListener`；支持 `Alt+Shift+B` 开关面板与托盘一键快切借用。
 
-### 优化与修复 (Improvements & Fixes)
-- **番剧 / 电影首屏接管修复**：同时登记 `GET` 与 `POST` 两种 `/ogv/player/playview` 端点；包装 `player.updateRequestConfig()` 持续净化 `reqHttpPlayUrlInfo` / `reqHttpPlayUrlInfoScope`；删除新版页面携带的 `is_qn_trial=1` 试看降级参数；番剧预热改为 `GET` 并兼容 `__PLAYURL_HYDRATE_DATA__`。
-- **三开关职责解耦与首屏竞态修复**：拆分 `hidePlayinfo` / `canBorrow` / `patchVip`，修复总开关关闭、空账号池、关闭界面伪装时的误干预问题；`pool()` 无数据时不再写回空池；支持晚到 `window.player` 接管与 PromptBar / 收银台按需清理，并收敛轮询与 MutationObserver 开销。
-- **`-10403` 误杀防护**：区分地区版权限制 / 付费点播等非账号原因的 `-10403`，不再误将正常大会员账号标记为凭据失效。
-- **首屏预热缓存归一化**：`cacheKey` 归一化为业务主键（`bvid` / `ep_id` / `cid` / `drm_tech_type` 与画质编码配置），屏蔽 `gaia_source` / `session` / `w_rid` / `wts` 等动态参数，使 `prefetch` 预热结果真正命中。
-- **音频重排与切号差集修正**：修复关闭界面伪装且编码为默认时高码率音频排序被短路跳过的缺陷；切号计算待删旧字段时改用当前登录账号而非借用源。
-
-### 架构与工程瘦身 (Refactoring)
-- **主世界钩子模块化与压缩打包**：抽离 `src/shared/vip.js` 与 `src/shared/region.js` 作为沙箱与钩子的单一事实源，消除双份维护；`src/injected/` 拆分为 `hook.js` / `emulate.js` / `nano.js` / `prefetch.js`，经 `esbuild` 独立打包压缩后内联，在新增多项功能的同时将最终产物体积回落至 ~135 KB。
-- **悬浮面板按职责拆分**：将 1,600+ 行的 `src/ui/panel.js` 拆分为 `styles.js` / `dom.js` / `dock.js` / `panel.js`，并同步纳入静态文案规范检查。
+### 修复与重构
+- **番剧首屏接管**：修复新版番剧首屏试看限制、`GET/POST playview` 拦截、剔除 `is_qn_trial=1` 与 `updateRequestConfig` 持续净化，并拆分三开关避免空池/关开关误干预（thanks @Emilelu #5）。
+- **代理与切号修复**：区分版权/地区 `-10403` 防误杀；归一化预热 `cacheKey` 提升命中率；修复音频重排短路与切号差集计算。
+- **架构瘦身**：抽离 `src/shared/` 共享模块，拆分 `src/injected/` 与 `src/ui/`。
 
 ## [v1.3.1] - 2026-11-03
 

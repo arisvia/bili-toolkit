@@ -57,14 +57,31 @@ export function httpRequest(req) {
         headersRaw: res.responseHeaders || ''
       });
     };
-    opts.onerror = (res) => done({ ok: false, status: res && res.status || 0, statusText: '', text: '', headersRaw: '', error: 'network' });
-    opts.ontimeout = () => done({ ok: false, status: 0, statusText: '', text: '', headersRaw: '', error: 'timeout' });
-    opts.onabort = () => done({ ok: false, status: 0, statusText: '', text: '', headersRaw: '', error: 'aborted' });
+    opts.onerror = (res) =>
+      done({
+        ok: false,
+        status: (res && res.status) || 0,
+        statusText: '',
+        text: '',
+        headersRaw: '',
+        error: 'network'
+      });
+    opts.ontimeout = () =>
+      done({ ok: false, status: 0, statusText: '', text: '', headersRaw: '', error: 'timeout' });
+    opts.onabort = () =>
+      done({ ok: false, status: 0, statusText: '', text: '', headersRaw: '', error: 'aborted' });
 
     try {
       GM_xmlhttpRequest(opts);
     } catch (e) {
-      done({ ok: false, status: 0, statusText: '', text: '', headersRaw: '', error: 'throw:' + (e && e.message) });
+      done({
+        ok: false,
+        status: 0,
+        statusText: '',
+        text: '',
+        headersRaw: '',
+        error: 'throw:' + (e && e.message)
+      });
     }
   });
 }

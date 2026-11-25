@@ -84,7 +84,9 @@ for (const [theme, name, fg, bg, baseline] of CASES) {
   if (!ok && !baseline) failed++;
   const mark = baseline ? '\x1b[90m' : ok ? '\x1b[32m' : '\x1b[31m';
   const level = baseline ? '修复前基线' : ok ? 'AA 达标' : r >= 3 ? '仅够大字/装饰' : '不达标';
-  console.log(`${(theme + ' ' + name).padEnd(26)}` + r.toFixed(2).padStart(6) + '   ' + mark + level + '\x1b[0m');
+  console.log(
+    `${(theme + ' ' + name).padEnd(26)}` + r.toFixed(2).padStart(6) + '   ' + mark + level + '\x1b[0m'
+  );
 }
 
 console.log('');

@@ -51,7 +51,11 @@ export function liveConfig() {
 }
 
 function getTrustedScript(source) {
-  if (typeof window !== 'undefined' && window.trustedTypes && typeof window.trustedTypes.createPolicy === 'function') {
+  if (
+    typeof window !== 'undefined' &&
+    window.trustedTypes &&
+    typeof window.trustedTypes.createPolicy === 'function'
+  ) {
     try {
       const policy = window.trustedTypes.createPolicy('bili-toolkit#hook', {
         createScript: (s) => s
@@ -79,7 +83,9 @@ function injectNow(source, done) {
   // 异步移除脚本节点，确保内联脚本在所有浏览器执行环境中均能完整执行
   try {
     setTimeout(() => {
-      try { el.remove(); } catch (e) {}
+      try {
+        el.remove();
+      } catch (e) {}
     }, 0);
   } catch (e) {}
   if (done) done(true);

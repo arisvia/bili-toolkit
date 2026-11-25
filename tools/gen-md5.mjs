@@ -15,7 +15,12 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'src/core/md5.js');
 
-const SHIFTS = [[7, 12, 17, 22], [5, 9, 14, 20], [4, 11, 16, 23], [6, 10, 15, 21]];
+const SHIFTS = [
+  [7, 12, 17, 22],
+  [5, 9, 14, 20],
+  [4, 11, 16, 23],
+  [6, 10, 15, 21]
+];
 const ORDER = [
   [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
   [1, 6, 11, 0, 5, 10, 15, 4, 9, 14, 3, 8, 13, 2, 7, 12],
@@ -38,7 +43,13 @@ for (let i = 0; i < 64; i++) {
 function formatTable(arr) {
   const rows = [];
   for (let i = 0; i < arr.length; i += 8) {
-    rows.push('  ' + arr.slice(i, i + 8).map((v) => String(v).padStart(11)).join(', '));
+    rows.push(
+      '  ' +
+        arr
+          .slice(i, i + 8)
+          .map((v) => String(v).padStart(11))
+          .join(', ')
+    );
   }
   return '[\n' + rows.join(',\n') + ']';
 }
@@ -137,9 +148,18 @@ export function md5(input) {
 // ---- 自检：生成后立即与 node:crypto 比对 ----
 const mod = await import('data:text/javascript;base64,' + Buffer.from(source, 'utf8').toString('base64'));
 const cases = [
-  '', 'a', 'abc', 'message digest',
+  '',
+  'a',
+  'abc',
+  'message digest',
   'The quick brown fox jumps over the lazy dog',
-  'x'.repeat(55), 'x'.repeat(56), 'x'.repeat(63), 'x'.repeat(64), 'x'.repeat(65), 'x'.repeat(119), 'x'.repeat(1000),
+  'x'.repeat(55),
+  'x'.repeat(56),
+  'x'.repeat(63),
+  'x'.repeat(64),
+  'x'.repeat(65),
+  'x'.repeat(119),
+  'x'.repeat(1000),
   '中文与 emoji 🎬 混排',
   'mid=12345&qn=127&fnval=4048&wts=1700000000'
 ];

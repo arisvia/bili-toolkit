@@ -118,9 +118,11 @@ B 账号 + qn=127  → quality=120/4K      ← 账号与参数都到位
 ## 开发
 
 ```bash
-npm install          # 只依赖 esbuild
-npm run build        # 构建 dist/bili-toolkit.user.js
-npm test             # 267 项 Node 测试
+npm install          # 开发依赖：esbuild / uqr / prettier
+npm run build        # 构建可读未压缩版 dist/bili-toolkit.user.js
+npm run format       # Prettier 统一格式化源码
+npm run format:check # 校验代码格式（CI 门禁）
+npm test             # Node 单元测试
 npm run verify       # 测试 + 线上契约校验 + 构建
 npm run dev          # 监听重建
 npm run harness      # 真实浏览器端到端冒烟
