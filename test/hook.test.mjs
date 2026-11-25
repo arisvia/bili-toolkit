@@ -2,13 +2,22 @@
  * 主世界钩子集成测试：在 vm 里跑真实的 src/injected/hook.js。
  *   node test/hook.test.mjs
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import * as esbuild from 'esbuild';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const HOOK = fs.readFileSync(path.join(ROOT, 'src/injected/hook.js'), 'utf8');
+const HOOK = (
+  await esbuild.build({
+    entryPoints: [path.join(ROOT, 'src/injected/hook.js')],
+    bundle: true,
+    format: 'iife',
+    target: ['chrome110', 'firefox110', 'safari16'],
+    charset: 'utf8',
+    write: false
+  })
+).outputFiles[0].text;
 
 let failed = 0;
 function check(name, cond, extra) {

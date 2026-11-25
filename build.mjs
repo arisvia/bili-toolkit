@@ -47,6 +47,8 @@ export const meta = `// ==UserScript==
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
+// @grant        GM_addValueChangeListener
+// @grant        GM_removeValueChangeListener
 // @grant        GM_registerMenuCommand
 // @grant        GM_notification
 // @grant        GM_cookie
@@ -132,7 +134,7 @@ function checkEndpoints() {
  * 这些字符串直接出现在用户面前，出现「本脚本」「我们」这类自称很出戏，
  * 而一旦写完就没人回头看，只能靠构建时卡一道。
  */
-const COPY_FILES = ['src/ui/panel.js', 'src/ui/menu.js', 'src/core/switcher.js', 'src/index.js'];
+const COPY_FILES = ['src/ui/panel.js', 'src/ui/dock.js', 'src/ui/dom.js', 'src/ui/menu.js', 'src/core/switcher.js', 'src/index.js'];
 
 function checkCopy() {
   const banned = ['本脚本', '我们', '您', '旧版本', '之前那版'];
@@ -177,16 +179,37 @@ function runChecks() {
 }
 
 /* ------------------------------------------------------------------ *
- * esbuild 插件：把「主世界钩子」当作字符串常量注入 bundle。
- * 这样钩子源码仍然是一个独立、可读、可高亮的 .js 文件（它有自己的全局作用域）。
+ * esbuild 插件：先把「主世界钩子」独立打包压缩成 IIFE，再当作字符串常量注入。
+ * 这样主世界钩子既能 import src/shared/* 消除双份维护，又能在生产构建中
+ * 被完整压缩，显著减小最终 .user.js 体积。
  * ------------------------------------------------------------------ */
+async function buildHookBundle() {
+  const res = await esbuild.build({
+    entryPoints: [HOOK_ENTRY],
+    bundle: true,
+    format: 'iife',
+    target: ['chrome110', 'firefox110', 'safari16'],
+    charset: 'utf8',
+    legalComments: 'none',
+    minify: !DEV,
+    write: false
+  });
+  const code = res.outputFiles[0].text;
+  const n = code.split('__BILI_VIP_CFG__').length - 1;
+  if (n !== 1) fail(`打包后的主世界钩子中占位符 __BILI_VIP_CFG__ 必须出现且只出现 1 次，实际 ${n} 次`);
+  return code;
+}
+
 const hookSourcePlugin = {
   name: 'bili-hook-source',
   setup(build) {
-    build.onLoad({ filter: /injected[\\/]hook\.js$/ }, () => ({
-      contents: `export default ${JSON.stringify(fs.readFileSync(HOOK_ENTRY, 'utf8'))};`,
-      loader: 'js'
-    }));
+    build.onLoad({ filter: /injected[\\/]hook\.js$/ }, async () => {
+      const code = await buildHookBundle();
+      return {
+        contents: `export default ${JSON.stringify(code)};`,
+        loader: 'js'
+      };
+    });
   }
 };
 
@@ -214,6 +237,7 @@ function buildOptions() {
 runChecks();
 
 if (CHECK_ONLY) {
+  await buildHookBundle();
   console.log('（--check 模式，未产出文件）');
   process.exit(process.exitCode || 0);
 }

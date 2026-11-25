@@ -25,6 +25,7 @@ const KEYS = {
   liveQn: 'b.liveQn',
   region: 'b.region',
   codec: 'b.codec',
+  preferCdn: 'b.preferCdn',
   cacheTtlMs: 'b.cacheTtlMs',
   debug: 'b.debug',
   strategy: 'b.strategy',
@@ -58,6 +59,20 @@ function readBool(key, fallback) {
   return v !== false && v !== 0 && v !== 'false';
 }
 
+/** 跨标签页同步需要监听的存储键集合 */
+export const SYNC_KEYS = [
+  KEYS.enabled,
+  KEYS.patchUi,
+  KEYS.softLogout,
+  KEYS.prefetch,
+  KEYS.quality,
+  KEYS.liveQn,
+  KEYS.region,
+  KEYS.codec,
+  KEYS.preferCdn,
+  KEYS.pool
+];
+
 export const store = {
   /* --- 设置项 --- */
   isEnabled: () => readBool(KEYS.enabled, DEFAULTS.enabled),
@@ -83,6 +98,10 @@ export const store = {
 
   getCodec: () => String(read(KEYS.codec, DEFAULTS.codec || 'auto')),
   setCodec: (v) => write(KEYS.codec, String(v)),
+
+  isPreferCdn: () => readBool(KEYS.preferCdn, DEFAULTS.preferCdn),
+  setPreferCdn: (v) => write(KEYS.preferCdn, !!v),
+
   // TTL 是常量，不是设置项。这里原本有 setCacheTtl() 但没人调用 ——
   // 界面上没有这个控件，写进存储的值永远等于 DEFAULTS.cacheTtlMs，
   // 看起来「可调」其实调不了。要开放的话得先加界面。
@@ -114,5 +133,34 @@ export const store = {
   getLegacyCookie: () => String(read(KEYS.legacyCookie, '') || ''),
   setLegacyCookie: (v) => write(KEYS.legacyCookie, String(v || '')),
   getLegacyAccount: () => read(KEYS.legacyAccount, null),
-  setLegacyAccount: (v) => write(KEYS.legacyAccount, v)
+  setLegacyAccount: (v) => write(KEYS.legacyAccount, v),
+
+  /**
+   * 监听其他标签页对 GM 存储的修改（不支持 GM_addValueChangeListener 时安全降级为空操作）。
+   * @param {string[]} keys
+   * @param {(key:string, oldVal:any, newVal:any, remote:boolean) => void} handler
+   * @returns {() => void} 取消监听函数
+   */
+  onChange(keys, handler) {
+    if (typeof GM_addValueChangeListener !== 'function') return () => {};
+    const ids = [];
+    for (const key of keys) {
+      try {
+        const id = GM_addValueChangeListener(key, (name, oldVal, newVal, remote) => {
+          try {
+            handler(name, oldVal, newVal, !!remote);
+          } catch {}
+        });
+        if (id !== undefined) ids.push(id);
+      } catch {}
+    }
+    return () => {
+      if (typeof GM_removeValueChangeListener !== 'function') return;
+      for (const id of ids) {
+        try {
+          GM_removeValueChangeListener(id);
+        } catch {}
+      }
+    };
+  }
 };

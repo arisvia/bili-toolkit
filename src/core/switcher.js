@@ -10,9 +10,11 @@
 import { sanitizeCookie, validateCookie, parseCookie } from './cookie.js';
 import { TEXT } from './text.js';
 import { log } from './log.js';
+import { store } from './store.js';
 import { resetCache } from './proxy.js';
-import { pushConfig, getToken } from './bus.js';
+import { pushConfig } from './bus.js';
 import { liveConfig } from './inject.js';
+import { encryptBackup, decryptBackup } from './backup.js';
 import {
   probeIdentity,
   probeAccount,
@@ -103,7 +105,7 @@ export function invalidateBrowserWho() {
 function afterSwitch() {
   resetCache();
   invalidateMixinKey();
-  pushConfig(liveConfig(getToken()));
+  pushConfig(liveConfig());
 }
 
 /* ------------------------------------------------------------------ *
@@ -164,6 +166,26 @@ export async function reprobe(id) {
   const r = await probeAccount(id);
   if (r.ok) syncLegacyMirror();
   return r;
+}
+
+/** 串行节流重探池内全部账号，避免瞬时并发触发风控 */
+export async function reprobeAll(onStep) {
+  const all = list();
+  let okCount = 0;
+  let failCount = 0;
+  for (let i = 0; i < all.length; i++) {
+    const acc = all[i];
+    const r = await probeAccount(acc.id);
+    if (r.ok) okCount++;
+    else failCount++;
+    if (typeof onStep === 'function') onStep({ index: i + 1, total: all.length, ok: r.ok, account: acc });
+    if (i < all.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  syncLegacyMirror();
+  afterSwitch();
+  return { total: all.length, okCount, failCount };
 }
 
 /* ------------------------------------------------------------------ *
@@ -240,9 +262,10 @@ export async function switchLoginTo(id) {
   if (!parsed.DedeUserID && target.mid) {
     cookieToApply = `${cookieToApply}; DedeUserID=${target.mid}`;
   }
-  // 切换前「已知存在」的字段：池内记录的旧账号 Cookie（它就是上次写进去的那份，
-  // 含 HttpOnly 字段）＋ 页面 document.cookie。两者合起来才够算出该删谁。
-  const before = presentIdentityKeys(borrowCookie());
+  // 切换前「已知存在」的字段：优先用当前登录账号记录（而非借用源）＋ 页面 document.cookie，
+  // 避免「当前登录 A、借用 B」切到 C 时漏删 A 独有的 sid 等字段。
+  const prevAcc = activeAccount();
+  const before = presentIdentityKeys((prevAcc && prevAcc.cookie) || borrowCookie());
   const stale = staleKeysFor(cookieToApply, before);
 
   const applied = await applyAccount(cookieToApply, stale);
@@ -404,12 +427,7 @@ export async function importBrowserAccount() {
 
 /** 借用源 Cookie 的脱敏摘要（只给字段数与身份，绝不给完整值） */
 function maskSummary() {
-  const p = getEffectiveCookie();
-  const parsed = {};
-  for (const part of String(p).split(';')) {
-    const i = part.indexOf('=');
-    if (i > 0) parsed[part.slice(0, i).trim()] = part.slice(i + 1).trim();
-  }
+  const parsed = parseCookie(getEffectiveCookie());
   const s = parsed.SESSDATA || '';
   const n = Object.keys(parsed).length;
   if (!s) return TEXT.pool.borrowNoSessdata;
@@ -433,4 +451,73 @@ export async function saveAndApplyScannedAccount(cookieString) {
   const sw = await switchLoginTo(r.id);
   invalidateBrowserWho();
   return { ...r, switch: sw };
+}
+
+/** 导出账号池与设置为口令加密的 JSON 文本 */
+export async function exportEncryptedBackup(password) {
+  const accounts = list().map((a) => ({
+    cookie: a.cookie,
+    label: a.label,
+    mid: a.mid,
+    uname: a.uname,
+    face: a.face,
+    vipStatus: a.vipStatus,
+    vipType: a.vipType,
+    checkedAt: a.checkedAt
+  }));
+  const payload = {
+    exportedAt: Date.now(),
+    accounts,
+    settings: {
+      enabled: store.isEnabled(),
+      patchUi: store.isPatchUi(),
+      softLogout: store.isSoftLogout(),
+      prefetch: store.isPrefetch(),
+      quality: store.getQuality(),
+      liveQn: store.getLiveQn(),
+      region: store.getRegion(),
+      codec: store.getCodec(),
+      preferCdn: store.isPreferCdn()
+    }
+  };
+  const text = await encryptBackup(payload, password);
+  return { ok: true, count: accounts.length, text };
+}
+
+/** 解密并安全合并导入账号池（不覆盖已有账号，保留自定义备注） */
+export async function importEncryptedBackup(rawText, password, opts = {}) {
+  const payload = await decryptBackup(rawText, password);
+  let added = 0;
+  let updated = 0;
+  for (const item of payload.accounts) {
+    if (!item || typeof item.cookie !== 'string') continue;
+    const res = addAccount(item.cookie, {
+      label: item.label || '',
+      mid: item.mid || '',
+      uname: item.uname || '',
+      face: item.face || '',
+      vipStatus: item.vipStatus || 0,
+      vipType: item.vipType || 0,
+      checkedAt: item.checkedAt || 0
+    });
+    if (!res.ok) continue;
+    if (res.isNew) added++;
+    else updated++;
+  }
+  if (opts.applySettings && payload.settings && typeof payload.settings === 'object') {
+    const s = payload.settings;
+    if (typeof s.enabled === 'boolean') store.setEnabled(s.enabled);
+    if (typeof s.patchUi === 'boolean') store.setPatchUi(s.patchUi);
+    if (typeof s.softLogout === 'boolean') store.setSoftLogout(s.softLogout);
+    if (typeof s.prefetch === 'boolean') store.setPrefetch(s.prefetch);
+    if (typeof s.quality === 'string') store.setQuality(s.quality);
+    if (typeof s.liveQn === 'string') store.setLiveQn(s.liveQn);
+    if (typeof s.region === 'string') store.setRegion(s.region);
+    if (typeof s.codec === 'string') store.setCodec(s.codec);
+    if (typeof s.preferCdn === 'boolean') store.setPreferCdn(s.preferCdn);
+  }
+  syncLegacyMirror();
+  afterSwitch();
+  invalidateBrowserWho();
+  return { ok: true, added, updated, total: added + updated };
 }
