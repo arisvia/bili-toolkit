@@ -8,7 +8,7 @@
  *   4. 最后起 UI
  */
 import hookSource from './injected/hook.js';
-import { setToken, startBus, pushConfig, getToken } from './core/bus.js';
+import { setToken, startBus, pushConfig } from './core/bus.js';
 import { injectHook, liveConfig } from './core/inject.js';
 import { store } from './core/store.js';
 import { setDebug, log, printBanner } from './core/log.js';
@@ -36,10 +36,10 @@ function boot() {
   const token = randomToken();
   setToken(token);
 
-  startBus(() => liveConfig(getToken()));
+  startBus(() => liveConfig());
   injectHook(hookSource, token, (ok) => {
     if (!ok) log.warn(TEXT.startup.hookFailed);
-    else pushConfig(liveConfig(token));
+    else pushConfig(liveConfig());
     refreshPanel();
   });
 
@@ -47,40 +47,36 @@ function boot() {
   // 而播放器的首个 playurl 往往几十毫秒内就到，必然赶不上 → 第一次永远退回原始参数。
   // 读一次池子，顺带完成旧版单账号数据的迁移。
   pool();
-  // 再推一次配置：GM 存储在首次 document-start 读取时可能还没就绪，
-  // 内联配置会拿到 patchVip=false；池子读完后补推，钩子会把已创建的
-  // 播放器重新接管，不必用户手动刷新。
-  pushConfig(liveConfig(token));
-  // 有些脚本管理器在首屏第一次读取 GM 存储时缓存尚未填充，第一次
-  // hasCookie() 会短暂为 false。每 200ms 重推一次配置，最多等 60 秒；
-  // 钩子收到 patchVip=true 后会重新接管已存在的播放器并 reload。
-  // 不能只等 2 秒：冷启动的扩展后台可能几秒后才把脚本存储灌进页面世界，
-  // 超时就放弃会让首屏永远停在 A 的试看数据上，只能靠用户刷新。
-  let configReady = false;
-  let configTries = 0;
-  const configTimer = setInterval(() => {
-    configTries++;
-    const ready = store.isEnabled() && hasCookie();
-    pushConfig(liveConfig(token));
-    if (ready) {
-      if (!configReady) {
-        configReady = true;
-        ensureMixinKey().then((k) => {
-          if (!k) log.warn(TEXT.startup.noMixinKey);
-          else refreshPanel();
-        });
-      }
-      clearInterval(configTimer);
-    } else if (configTries >= 300) {
-      clearInterval(configTimer);
-    }
-  }, 200);
-  if (store.isEnabled() && hasCookie()) {
-    configReady = true;
+  const warmMixin = () => {
     ensureMixinKey().then((k) => {
       if (!k) log.warn(TEXT.startup.noMixinKey);
       else refreshPanel();
     });
+  };
+  if (store.isEnabled() && hasCookie()) {
+    // 池子迁移或读取后同步补推一次，确保钩子与最新存储一致
+    pushConfig(liveConfig());
+    warmMixin();
+  } else if (store.isEnabled()) {
+    // 部分脚本管理器在 document-start 首次读取 GM 存储时缓存尚未就绪，
+    // hasCookie() 可能短暂为 false。这里静默轮询最多 15 秒（60 × 250ms），
+    // 仅在账号真正就绪时补推一次配置并预热密钥，避免空池时反复 postMessage。
+    let tries = 0;
+    const configTimer = setInterval(() => {
+      tries++;
+      if (!store.isEnabled()) {
+        clearInterval(configTimer);
+        return;
+      }
+      if (hasCookie()) {
+        clearInterval(configTimer);
+        pushConfig(liveConfig());
+        warmMixin();
+        refreshPanel();
+      } else if (tries >= 60) {
+        clearInterval(configTimer);
+      }
+    }, 250);
   }
 
   mountPanel();
@@ -88,7 +84,9 @@ function boot() {
   restorePlaybackProgress();
   // 没有可用账号时给一次性提示，避免用户对着「画质没变」发呆
   if (store.isEnabled() && !hasCookie()) {
-    setTimeout(() => log.warn(TEXT.startup.poolEmpty), 1500);
+    setTimeout(() => {
+      if (store.isEnabled() && !hasCookie()) log.warn(TEXT.startup.poolEmpty);
+    }, 1500);
   } else if (store.isEnabled()) {
     const problem = cookieProblem();
     if (problem) setTimeout(() => log.warn(TEXT.startup.cookieProblem + problem), 1500);

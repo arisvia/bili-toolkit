@@ -1395,11 +1395,11 @@ function renderDiag() {
   let warn = true; // 没注入钩子 = 确定坏了
   if (sc) {
     warn = !sc.playinfoHooked; // 只在「访问器没装上」时报警
-    // 借用总开关关着时，不隐藏 playinfo 是**设计如此**，不能报成异常，
-    // 也不该被「还没有代理命中」盖住 —— 先判开关，再判有没有命中。
+    // 借用总开关关闭或无可用账号时，不要求代理命中，先判借用是否激活再判命中数。
+    const borrowActive = sc.canBorrow !== undefined ? sc.canBorrow : sc.hidePlayinfo;
     txt = !sc.playinfoHooked
       ? TEXT.diag.selfNoPlayinfo
-      : !sc.hidePlayinfo
+      : !borrowActive
         ? (hits ? TEXT.diag.selfPlayinfoNotNeeded : TEXT.diag.selfNoBorrow).replace('{n}', hits)
         : !hits
           ? TEXT.diag.selfNoIntercept
