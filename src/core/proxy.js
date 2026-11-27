@@ -16,6 +16,7 @@ import { signUrl, hasWbiSignature } from './wbi.js';
 import { patchJsonText } from './patch.js';
 import { cacheGet, cacheSet, cacheClear, cacheGeneration, coalesce, cacheInfo } from './cache.js';
 import { log, stats, setCurrentMedia } from './log.js';
+import { recordMediaStreams } from './stream-export.js';
 
 /** 从 B 的响应里把「实际拿到的播放流」提取出来，用于日志与面板实时展示 */
 export function summarize(text) {
@@ -348,6 +349,7 @@ export async function handleProxy(ep, msg) {
     stats.cacheServed++;
     log.debug(`[缓存命中] ${ep.id}`);
     setCurrentMedia(ep.id, cached.summary, true);
+    recordMediaStreams(ep.id, cached.body, msg.url);
     return {
       passthrough: false,
       status: cached.status,
@@ -426,6 +428,7 @@ export async function handleProxy(ep, msg) {
         codec: store.getCodec(),
         preferCdn: store.isPreferCdn()
       });
+      recordMediaStreams(ep.id, patched, msg.url);
       return {
         passthrough: false,
         status: res.status,

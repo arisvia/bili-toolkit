@@ -346,10 +346,23 @@ export function buildStyles(ID) {
 #${ID} summary::-webkit-details-marker { display: none; }
 #${ID} summary::before { content: '▸ '; display: inline-block; transition: transform .18s; }
 #${ID} details[open] summary::before { content: '▾ '; }
+#${ID} .export-sec { padding-top: 6px; padding-bottom: 8px; border-top-style: dashed; }
+#${ID} .export-sec details { margin-top: 0; }
+#${ID} .export-body { margin-top: 6px; }
+#${ID} .sel {
+  flex: 1; min-width: 0; height: 28px; padding: 0 8px;
+  border-radius: 9px; border: 1px solid var(--sep);
+  background: var(--hov); color: var(--fg); font-size: 11.5px; outline: none;
+  cursor: pointer; transition: border-color .16s, background .16s, box-shadow .16s;
+}
+#${ID} .sel:hover { border-color: var(--bd2); background: var(--hov2); }
+#${ID} .sel:focus { border-color: var(--ring); box-shadow: 0 0 0 3px var(--ring-soft); }
+#${ID} .sel option { background: var(--sel-bg); color: var(--fg); }
 
 @media (prefers-color-scheme: dark) {
   #${ID} {
     --fg: rgba(255,255,255,.92); --bg: rgba(28,28,32,.6); --bd: rgba(255,255,255,.13);
+    --sel-bg: #1e1e24;
     --hl: rgba(255,255,255,.1); --sh: rgba(0,0,0,.5); --ring: rgba(120,220,200,.6);
     --ring-soft: rgba(120,220,200,.16); --sb: rgba(255,255,255,.16); --sb2: rgba(255,255,255,.28);
     --dotc: #6fd3bd; --hov: rgba(255,255,255,.07); --hov2: rgba(255,255,255,.13);
@@ -368,6 +381,7 @@ export function buildStyles(ID) {
 @media (prefers-color-scheme: light) {
   #${ID} {
     --fg: rgba(20,22,26,.9); --bg: rgba(255,255,255,.56); --bd: rgba(20,22,26,.1);
+    --sel-bg: #ffffff;
     --hl: rgba(255,255,255,.75); --sh: rgba(20,22,26,.14); --ring: rgba(0,160,150,.55);
     --ring-soft: rgba(0,150,136,.14); --sb: rgba(20,22,26,.16); --sb2: rgba(20,22,26,.28);
     --dotc: #00a396; --hov: rgba(20,22,26,.045); --hov2: rgba(20,22,26,.09);
