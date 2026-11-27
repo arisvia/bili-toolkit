@@ -40,6 +40,7 @@ import { liveConfig } from '../core/inject.js';
 import { ensureStyle } from './styles.js';
 import { el, section, segmented, row, details, mkBtn, TAG_KIND } from './dom.js';
 import { createDockRenderer } from './dock.js';
+import { createStreamExportDrawer } from './export-drawer.js';
 
 const ID = NS + '-panel';
 const TITLE = NAME;
@@ -91,6 +92,10 @@ function buildPanel(body) {
   live.id = ID + '-live';
   body.appendChild(live);
   renderLive();
+
+  /* --- 当前播放流导出（独立于 renderLive 定时重绘，默认收起） --- */
+  const streamExport = createStreamExportDrawer(ID);
+  body.appendChild(streamExport.root);
 
   /* --- 开关（用分段控件代替 checkbox，更紧凑） --- */
   const sw = section();

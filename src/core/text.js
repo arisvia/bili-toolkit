@@ -24,6 +24,22 @@ export const TEXT = {
     endpoint: '来源'
   },
 
+  /* --- 当前播放流导出 --- */
+  streamExport: {
+    summary: '导出流与命令',
+    empty: '播放或切换清晰度后显示可用音视频流',
+    videoLabel: '视频流',
+    audioLabel: '音频流',
+    copyVideo: '复制视频直链',
+    copyAudio: '复制音频直链',
+    copyFfmpeg: '复制 FFmpeg',
+    copyAria2: '复制 Aria2',
+    copied: '已复制到剪贴板',
+    copyFailed: '复制失败，请检查剪贴板权限',
+    unavailable: '当前暂无可用流地址',
+    dashOnlyHint: 'DASH 为音视频分离流，合并播放需 FFmpeg'
+  },
+
   /* --- 画质 --- */
   quality: {
     title: '画质请求',

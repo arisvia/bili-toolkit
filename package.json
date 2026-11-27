@@ -27,7 +27,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:contrast": "node tools/contrast-check.mjs",
-    "test": "node test/smoke.test.mjs && node test/cookie-parse.test.mjs && node test/accounts.test.mjs && node test/proxy.test.mjs && node test/hook.test.mjs",
+    "test": "node test/smoke.test.mjs && node test/cookie-parse.test.mjs && node test/accounts.test.mjs && node test/proxy.test.mjs && node test/hook.test.mjs && node test/stream-export.test.mjs",
     "verify": "npm run test && npm run check:contrast && npm run verify:online && npm run build",
     "verify:online": "node tools/online-check.mjs",
     "verify:local": "node tools/verify-local.mjs",
